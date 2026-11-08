@@ -1,0 +1,182 @@
+use super::*;
+
+const MODULE: &str = r#"import * as Option from 'effect/Option'
+
+const LIMIT = 10
+
+export function label(name: string | undefined): string {
+  let result = 'untitled'
+  if (name !== undefined) {
+    result = name.toUpperCase()
+  }
+  return result
+}
+
+export class Greeter {
+  private readonly greeting = 'hello'
+
+  greet(name: string): string {
+    return `${this.greeting} ${name}`
+  }
+
+  wave(): string {
+    return 'wave'
+  }
+}
+
+export const toTitle = (name: string) =>
+  Option.liftPredicate(name, (value) => value.length > 0).pipe(
+    Option.map((value) => value.toUpperCase()),
+  )
+"#;
+
+const GUIDE: &str = "# Guide\n\nIntro.\n\n## First\n\nPara one.\n\n## Second\n\nPara two.\n";
+
+fn lines(first: usize, last: usize) -> LineRange {
+    LineRange { first, last }
+}
+
+fn render(snippets: &[Snippet]) -> String {
+    snippets
+        .iter()
+        .map(|snippet| {
+            let signature = snippet
+                .signature
+                .as_ref()
+                .map(|signature| format!(" inside `{signature}`"))
+                .unwrap_or_default();
+            format!(
+                "lines {}-{}{signature}\n{}",
+                snippet.first_line, snippet.last_line, snippet.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n-----\n")
+}
+
+fn long_function() -> String {
+    let filler: String = (0..400)
+        .map(|index| format!("  const value{index} = {index}\n"))
+        .collect();
+    format!(
+        "function long(input: number): number {{\n{filler}  if (input > 0) {{\n    let total = input\n    total += 1\n  }}\n{filler}  return input\n}}\n"
+    )
+}
+
+#[test]
+fn grammars_load() {
+    for (path, source) in [
+        (
+            "a.ts",
+            "const add = (left: number, right: number): number => left + right\n",
+        ),
+        (
+            "a.tsx",
+            "const View = (props: { name: string }) => <div>{props.name}</div>\n",
+        ),
+        (
+            "a.js",
+            "export function add(left, right) { return left + right }\n",
+        ),
+        ("a.md", "# Title\n\nSome text.\n"),
+    ] {
+        let language = Language::from_path(path).unwrap();
+        let tree = language.parse(source).unwrap();
+        assert!(!tree.root_node().has_error(), "{path}");
+    }
+}
+
+#[test]
+fn a_change_inside_a_function_climbs_to_the_function() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/module.ts",
+        MODULE,
+        &[lines(8, 8)]
+    )));
+}
+
+#[test]
+fn a_change_outside_any_function_climbs_to_the_top_level_statement() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/module.ts",
+        MODULE,
+        &[lines(3, 3)]
+    )));
+}
+
+#[test]
+fn changes_in_two_methods_are_two_snippets() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/module.ts",
+        MODULE,
+        &[lines(17, 17), lines(21, 21)]
+    )));
+}
+
+#[test]
+fn a_callback_climbs_past_itself_to_the_named_function() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/module.ts",
+        MODULE,
+        &[lines(26, 26)]
+    )));
+}
+
+#[test]
+fn blank_lines_select_nothing() {
+    assert_eq!(
+        snippets_for_changes("src/module.ts", MODULE, &[lines(4, 4)]),
+        Vec::new()
+    );
+}
+
+#[test]
+fn a_whole_new_file_is_every_top_level_unit() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/module.ts",
+        MODULE,
+        &[LineRange::WHOLE_FILE]
+    )));
+}
+
+#[test]
+fn a_function_over_the_budget_is_cut_to_the_block_around_the_change() {
+    let source = long_function();
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/long.ts",
+        &source,
+        &[lines(404, 404)]
+    )));
+}
+
+#[test]
+fn markdown_climbs_to_the_heading_section() {
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "AGENTS.md",
+        GUIDE,
+        &[lines(7, 7)]
+    )));
+}
+
+#[test]
+fn a_unit_that_does_not_parse_falls_back_to_a_line_window() {
+    let source = "function broken( {\n  return 1\n}\n";
+    insta::assert_snapshot!(render(&snippets_for_changes(
+        "src/broken.ts",
+        source,
+        &[lines(2, 2)]
+    )));
+}
+
+#[test]
+fn an_unknown_language_falls_back_to_a_line_window() {
+    let source: String = (1..=50).map(|line| format!("line {line}\n")).collect();
+    let snippets = snippets_for_changes("src/main.rs", &source, &[lines(30, 31)]);
+    assert_eq!(
+        snippets
+            .iter()
+            .map(|snippet| (snippet.first_line, snippet.last_line))
+            .collect::<Vec<_>>(),
+        vec![(10, 50)]
+    );
+}

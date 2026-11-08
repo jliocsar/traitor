@@ -1,0 +1,13 @@
+---
+source: crates/traitor-core/src/climb/tests.rs
+expression: "render(&snippets_for_changes(\"src/module.ts\", MODULE,\n&[lines(17, 17), lines(21, 21)]))"
+---
+lines 16-18
+  greet(name: string): string {
+    return `${this.greeting} ${name}`
+  }
+-----
+lines 20-22
+  wave(): string {
+    return 'wave'
+  }

@@ -1,0 +1,9 @@
+---
+source: crates/traitor-core/src/climb/tests.rs
+expression: "render(&snippets_for_changes(\"src/long.ts\", &source, &[lines(404, 404)]))"
+---
+lines 402-405 inside `function long(input: number): number`
+  if (input > 0) {
+    let total = input
+    total += 1
+  }

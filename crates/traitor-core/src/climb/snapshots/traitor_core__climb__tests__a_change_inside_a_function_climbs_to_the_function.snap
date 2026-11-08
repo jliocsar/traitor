@@ -1,0 +1,12 @@
+---
+source: crates/traitor-core/src/climb/tests.rs
+expression: "render(&snippets_for_changes(\"src/module.ts\", MODULE, &[lines(8, 8)]))"
+---
+lines 5-11
+export function label(name: string | undefined): string {
+  let result = 'untitled'
+  if (name !== undefined) {
+    result = name.toUpperCase()
+  }
+  return result
+}

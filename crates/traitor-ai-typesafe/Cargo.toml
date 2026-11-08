@@ -6,4 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "http2", "system-proxy"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+snafu = "0.9.2"
 traitor-core = { version = "0.0.0", path = "../traitor-core" }
+
+[dev-dependencies]
+insta = { version = "1.49.0", features = ["json"] }

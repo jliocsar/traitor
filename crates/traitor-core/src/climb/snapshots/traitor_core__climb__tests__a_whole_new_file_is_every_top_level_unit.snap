@@ -1,0 +1,37 @@
+---
+source: crates/traitor-core/src/climb/tests.rs
+expression: "render(&snippets_for_changes(\"src/module.ts\", MODULE,\n&[LineRange::WHOLE_FILE]))"
+---
+lines 1-1
+import * as Option from 'effect/Option'
+-----
+lines 3-3
+const LIMIT = 10
+-----
+lines 5-11
+export function label(name: string | undefined): string {
+  let result = 'untitled'
+  if (name !== undefined) {
+    result = name.toUpperCase()
+  }
+  return result
+}
+-----
+lines 13-23
+export class Greeter {
+  private readonly greeting = 'hello'
+
+  greet(name: string): string {
+    return `${this.greeting} ${name}`
+  }
+
+  wave(): string {
+    return 'wave'
+  }
+}
+-----
+lines 25-28
+export const toTitle = (name: string) =>
+  Option.liftPredicate(name, (value) => value.length > 0).pipe(
+    Option.map((value) => value.toUpperCase()),
+  )

@@ -1,0 +1,6 @@
+---
+source: crates/traitor-core/src/climb/tests.rs
+expression: "render(&snippets_for_changes(\"src/module.ts\", MODULE, &[lines(3, 3)]))"
+---
+lines 3-3
+const LIMIT = 10
