@@ -17,13 +17,7 @@ expression: request_body(&request())
         "trait": {
           "title": "Railway, not guards",
           "why": "Guards hide how a value flows.",
-          "expect": "A computed value flows through combinators.",
-          "examples": {
-            "pass": [],
-            "fail": [
-              "let total = 0"
-            ]
-          }
+          "expect": "A computed value flows through combinators."
         }
       },
       "criteria": {

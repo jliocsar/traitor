@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use snafu::{OptionExt, ResultExt, Snafu};
 
 pub const TRAITS_DIRECTORY: &str = ".agents/traits";
@@ -36,25 +36,12 @@ pub enum TraitDefinitionError {
     },
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct Examples {
-    pub pass: Vec<String>,
-    pub fail: Vec<String>,
-}
-
-impl Examples {
-    pub fn is_empty(&self) -> bool {
-        self.pass.is_empty() && self.fail.is_empty()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TraitDefinition {
     pub slug: String,
     pub title: String,
     pub why: String,
     pub expect: String,
-    pub examples: Examples,
     paths: GlobSet,
 }
 
@@ -67,16 +54,9 @@ struct Frontmatter {
     paths: Vec<String>,
 }
 
-#[derive(Clone, Copy)]
-enum ExampleKind {
-    Pass,
-    Fail,
-}
-
 impl TraitDefinition {
     pub fn parse(slug: &str, path: &Path, contents: &str) -> Result<Self, TraitDefinitionError> {
-        let (frontmatter, body) =
-            split_frontmatter(contents).context(MissingFrontmatterSnafu { path })?;
+        let frontmatter = split_frontmatter(contents).context(MissingFrontmatterSnafu { path })?;
         let frontmatter: Frontmatter =
             serde_saphyr::from_str(frontmatter).context(InvalidFrontmatterSnafu { path })?;
         Ok(Self {
@@ -84,7 +64,6 @@ impl TraitDefinition {
             title: frontmatter.title,
             why: frontmatter.why,
             expect: frontmatter.expect,
-            examples: parse_examples(body),
             paths: compile_globs(path, &frontmatter.paths)?,
         })
     }
@@ -140,62 +119,12 @@ pub fn compile_globs(path: &Path, globs: &[String]) -> Result<GlobSet, TraitDefi
         })
 }
 
-fn split_frontmatter(contents: &str) -> Option<(&str, &str)> {
+fn split_frontmatter(contents: &str) -> Option<&str> {
     let rest = contents
         .strip_prefix("---\n")
         .or_else(|| contents.strip_prefix("---\r\n"))?;
     let end = rest.find("\n---")?;
-    let after = &rest[end + 4..];
-    let body = after.split_once('\n').map_or("", |(_, body)| body);
-    Some((&rest[..=end], body))
-}
-
-fn parse_examples(body: &str) -> Examples {
-    let mut examples = Examples::default();
-    let mut section = None;
-    let mut fence: Option<(String, Vec<&str>)> = None;
-    for line in body.lines() {
-        if let Some((marker, lines)) = &mut fence {
-            if closes_fence(line, marker) {
-                let example = lines.join("\n");
-                match section {
-                    Some(ExampleKind::Pass) => examples.pass.push(example),
-                    Some(ExampleKind::Fail) => examples.fail.push(example),
-                    None => {}
-                }
-                fence = None;
-            } else {
-                lines.push(line);
-            }
-        } else if let Some(marker) = opening_fence(line) {
-            fence = Some((marker, Vec::new()));
-        } else if let Some(heading) = heading_text(line) {
-            section = match heading.to_lowercase().as_str() {
-                "pass" => Some(ExampleKind::Pass),
-                "fail" => Some(ExampleKind::Fail),
-                _ => None,
-            };
-        }
-    }
-    examples
-}
-
-fn heading_text(line: &str) -> Option<&str> {
-    let text = line.trim_start_matches('#');
-    (text.len() < line.len() && text.starts_with(' ')).then(|| text.trim())
-}
-
-fn opening_fence(line: &str) -> Option<String> {
-    let trimmed = line.trim_start();
-    let character = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
-    let marker: String = trimmed.chars().take_while(|c| *c == character).collect();
-    (marker.len() >= 3).then_some(marker)
-}
-
-fn closes_fence(line: &str, marker: &str) -> bool {
-    let trimmed = line.trim();
-    let character = marker.chars().next().unwrap_or('`');
-    trimmed.len() >= marker.len() && trimmed.chars().all(|c| c == character)
+    Some(&rest[..=end])
 }
 
 #[cfg(test)]
@@ -205,19 +134,13 @@ mod tests {
     const RAILWAY: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators.\npaths:\n  - \"src/**/*.ts\"\n---\n\nSome prose that isn't sent.\n\n## Pass\n\n```ts\nconst label = Option.map(name, toTitle)\n```\n\n## Fail\n\n````ts\nlet label = ''\n```\nnot a close\n```\n````\n\n```ts\nlet total = 0\n```\n";
 
     #[test]
-    fn parses_frontmatter_and_examples() {
+    fn reads_the_frontmatter_and_ignores_the_body() {
         let definition =
             TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), RAILWAY).unwrap();
         assert_eq!(definition.title, "Railway, not guards");
         assert_eq!(
-            definition.examples,
-            Examples {
-                pass: vec!["const label = Option.map(name, toTitle)".to_string()],
-                fail: vec![
-                    "let label = ''\n```\nnot a close\n```".to_string(),
-                    "let total = 0".to_string()
-                ],
-            }
+            definition.expect,
+            "A computed value flows through combinators."
         );
     }
 

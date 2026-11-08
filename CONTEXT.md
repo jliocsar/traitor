@@ -23,9 +23,6 @@ Jev's opt-in mode with larger request limits, used only when even the smallest s
 Jev's answer for one trait and one snippet: pass, fail, n/a (the snippet has nothing the trait is about) or unsure.
 _Avoid_: result, assessment, finding
 
-**Example**:
-A short pass or fail illustration written in a trait, sent to Jev with every question about that trait.
-
 **Case**:
-A snippet stored beside a trait with the verdict it should get, used only to test the trait and never sent as an example.
+A snippet stored beside a trait with the verdict it should get, used only to test the trait and never sent to Jev.
 _Avoid_: fixture, test
