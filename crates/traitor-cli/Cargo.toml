@@ -1,0 +1,16 @@
+[package]
+name = "traitor-cli"
+description = "Checks changed code and docs against a repo's traits."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "traitor"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+traitor-ai-typesafe = { version = "0.0.0", path = "../traitor-ai-typesafe" }
+traitor-core = { version = "0.0.0", path = "../traitor-core" }

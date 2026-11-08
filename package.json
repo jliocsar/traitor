@@ -1,0 +1,5 @@
+{
+  "name": "traitor-workspace",
+  "private": true,
+  "workspaces": ["packages/*"]
+}
