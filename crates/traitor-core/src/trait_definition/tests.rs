@@ -33,3 +33,20 @@ fn rejects_unknown_frontmatter_fields() {
         Err(TraitDefinitionError::InvalidFrontmatter { .. })
     );
 }
+
+#[test]
+fn only_a_line_of_exactly_three_dashes_closes_the_frontmatter() {
+    let contents = RAILWAY.replacen("\n---\n\n", "\n----\n\n", 1);
+    assert_matches!(
+        TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), &contents),
+        Err(TraitDefinitionError::MissingFrontmatter { .. })
+    );
+}
+
+#[test]
+fn empty_frontmatter_is_invalid_rather_than_missing() {
+    assert_matches!(
+        TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), "---\n---\n"),
+        Err(TraitDefinitionError::InvalidFrontmatter { .. })
+    );
+}
