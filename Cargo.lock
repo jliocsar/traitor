@@ -1849,6 +1849,7 @@ name = "traitor-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "semver",
  "snafu",
  "tokio",
  "traitor-ai-typesafe",
@@ -1863,6 +1864,7 @@ dependencies = [
  "futures",
  "globset",
  "insta",
+ "semver",
  "serde",
  "serde-saphyr",
  "serde_json",

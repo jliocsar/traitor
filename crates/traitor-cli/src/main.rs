@@ -1,14 +1,16 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use semver::Version;
 use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::cache::VerdictCache;
 use traitor_core::check::{Finding, Report, check};
 use traitor_core::config::CONFIG_PATH;
+use traitor_core::init::{InitOutcome, init};
 use traitor_core::verdict::Answer;
 
 const EXIT_TRAIT_BROKEN: u8 = 1;
-const EXIT_COULD_NOT_CHECK: u8 = 2;
+const EXIT_COULD_NOT_RUN: u8 = 2;
 
 #[derive(Parser)]
 #[command(name = "traitor", version, about)]
@@ -19,6 +21,8 @@ struct Arguments {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Set traitor up in this repo, or upgrade its config to this traitor's version. Setting up is how a repo agrees to send its code to TypeSafe.
+    Init,
     /// Judge every changed snippet against the traits whose paths match it.
     Check {
         /// What to judge, as `git diff` reads it: nothing for everything unpushed, a ref for everything since it, or A..B for what changed between two commits.
@@ -28,7 +32,48 @@ enum Command {
 
 fn main() -> ExitCode {
     match Arguments::parse().command {
+        Command::Init => run_init(),
         Command::Check { revision } => run_check(revision.as_deref()),
+    }
+}
+
+fn run_init() -> ExitCode {
+    let version =
+        Version::parse(env!("CARGO_PKG_VERSION")).expect("cargo package versions are semver");
+    let outcome = std::env::current_dir()
+        .map_err(|error| error.to_string())
+        .and_then(|directory| init(&directory, &version).map_err(|error| error.to_string()));
+    match outcome {
+        Ok(initialized) => {
+            match initialized.outcome {
+                InitOutcome::Created => {
+                    println!("Wrote {CONFIG_PATH}.");
+                    println!();
+                    println!(
+                        "From now on, `traitor check` sends each changed snippet in this repo to TypeSafe (api.typesafe.ai) to be judged. TypeSafe says it doesn't train on what it receives, and keeps it for as long as is reasonably necessary."
+                    );
+                    println!(
+                        "Committing {CONFIG_PATH} is how this repo agrees to that, for everyone who works on it. Delete it to stop."
+                    );
+                    println!();
+                    println!("Next, add a trait as .agents/traits/<slug>/TRAIT.md.");
+                }
+                InitOutcome::AlreadyCurrent => {
+                    println!("{CONFIG_PATH} is already on traitor {version}.");
+                }
+                InitOutcome::Upgraded { from } => {
+                    println!("Upgraded {CONFIG_PATH} from traitor {from} to {version}.");
+                }
+                InitOutcome::AddedSchema => {
+                    println!("Pinned {CONFIG_PATH} to traitor {version}'s schema.");
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(message) => {
+            eprintln!("traitor couldn't set up: {message}");
+            ExitCode::from(EXIT_COULD_NOT_RUN)
+        }
     }
 }
 
@@ -60,7 +105,7 @@ fn run_check(revision: Option<&str>) -> ExitCode {
         }
         Err(message) => {
             eprintln!("traitor couldn't check: {message}");
-            ExitCode::from(EXIT_COULD_NOT_CHECK)
+            ExitCode::from(EXIT_COULD_NOT_RUN)
         }
     }
 }

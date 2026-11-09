@@ -3,6 +3,7 @@ pub mod check;
 pub mod climb;
 pub mod config;
 pub mod git;
+pub mod init;
 pub mod judge;
 pub mod question;
 pub mod token;

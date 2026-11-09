@@ -87,13 +87,17 @@ impl Config {
                 source,
             },
         })?;
+        Self::parse(&path, &contents)
+    }
+
+    pub fn parse(path: &Path, contents: &[u8]) -> Result<Self, ConfigError> {
         let file: ConfigFile =
-            serde_json::from_slice(&contents).context(InvalidConfigSnafu { path: &path })?;
+            serde_json::from_slice(contents).context(InvalidConfigSnafu { path })?;
         let traits = file
             .traits
             .into_iter()
             .map(|(slug, settings)| {
-                let policy = TraitPolicy::from_settings(&path, &slug, settings)?;
+                let policy = TraitPolicy::from_settings(path, &slug, settings)?;
                 Ok((slug, policy))
             })
             .collect::<Result<_, ConfigError>>()?;
