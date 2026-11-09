@@ -61,13 +61,11 @@ pub enum InitOutcome {
 pub fn init(directory: &Path, binary_version: &Version) -> Result<InitOutcome, InitError> {
     let repository = Repository::discover(directory)?;
     let path = repository.root().join(CONFIG_PATH);
-    match read_if_present(&path)? {
-        Some(contents) => upgrade(&path, &contents, binary_version),
-        None => {
-            write_config(&path, &new_config_file(binary_version))?;
-            Ok(InitOutcome::Created)
-        }
+    if let Some(contents) = read_if_present(&path)? {
+        return upgrade(&path, &contents, binary_version);
     }
+    write_config(&path, &new_config_file(binary_version))?;
+    Ok(InitOutcome::Created)
 }
 
 fn upgrade(

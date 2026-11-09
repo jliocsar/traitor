@@ -14,3 +14,6 @@ traitor-core = { path = "../traitor-core" }
 
 [dev-dependencies]
 insta = { version = "1.49.0", features = ["json"] }
+
+[lints]
+workspace = true

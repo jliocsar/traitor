@@ -1,6 +1,9 @@
+use std::fmt::Write;
+use std::ops::RangeInclusive;
+
 use super::*;
 
-const MODULE: &str = r#"import * as Option from 'effect/Option'
+const MODULE: &str = r"import * as Option from 'effect/Option'
 
 const LIMIT = 10
 
@@ -28,7 +31,7 @@ export const toTitle = (name: string) =>
   Option.liftPredicate(name, (value) => value.length > 0).pipe(
     Option.map((value) => value.toUpperCase()),
   )
-"#;
+";
 
 const GUIDE: &str = "# Guide\n\nIntro.\n\n## First\n\nPara one.\n\n## Second\n\nPara two.\n";
 
@@ -54,10 +57,15 @@ fn render(snippets: &[Snippet]) -> String {
         .join("\n-----\n")
 }
 
+fn numbered_lines(numbers: RangeInclusive<usize>, line: impl Fn(usize) -> String) -> String {
+    numbers.fold(String::new(), |mut text, number| {
+        writeln!(text, "{}", line(number)).unwrap();
+        text
+    })
+}
+
 fn long_function() -> String {
-    let filler: String = (0..400)
-        .map(|index| format!("  const value{index} = {index}\n"))
-        .collect();
+    let filler = numbered_lines(0..=399, |index| format!("  const value{index} = {index}"));
     format!(
         "function long(input: number): number {{\n{filler}  if (input > 0) {{\n    let total = input\n    total += 1\n  }}\n{filler}  return input\n}}\n"
     )
@@ -183,7 +191,7 @@ fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
 
 #[test]
 fn a_long_new_file_in_an_unknown_language_is_cut_to_the_budget() {
-    let source: String = (1..=2000).map(|line| format!("line {line}\n")).collect();
+    let source = numbered_lines(1..=2000, |line| format!("line {line}"));
     let snippets = snippets_for_changes("src/main.rs", &source, &[Change::WHOLE_FILE]);
     assert!(snippets.len() > 1);
     assert!(
@@ -219,7 +227,7 @@ fn blank_lines_in_an_unknown_language_select_nothing() {
 
 #[test]
 fn an_unknown_language_falls_back_to_a_line_window() {
-    let source: String = (1..=50).map(|line| format!("line {line}\n")).collect();
+    let source = numbered_lines(1..=50, |line| format!("line {line}"));
     let snippets = snippets_for_changes("src/main.rs", &source, &[lines(30, 31)]);
     assert_eq!(
         snippets
@@ -270,7 +278,7 @@ fn a_deletion_between_blank_lines_reaches_the_nearest_code_on_each_side() {
 
 #[test]
 fn a_window_on_a_units_last_line_does_not_repeat_the_unit() {
-    let body: String = (1..=25).map(|index| format!("  x{index}()\n")).collect();
+    let body = numbered_lines(1..=25, |index| format!("  x{index}()"));
     let source = format!("function a() {{\n{body}}}; foo()\n");
     let snippets = snippets_for_changes("src/a.ts", &source, &[lines(2, 2), lines(27, 27)]);
     assert!(

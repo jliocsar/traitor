@@ -48,27 +48,29 @@ impl FakeJudge {
 impl Judge for FakeJudge {
     type Error = Offline;
 
-    fn model(&self) -> &str {
+    fn model(&self) -> &'static str {
         "fake"
     }
 
-    async fn judge(
+    fn judge(
         &self,
         request: &JudgeRequest<'_, '_>,
-    ) -> Result<BTreeMap<String, Verdict>, Offline> {
+    ) -> impl Future<Output = Result<BTreeMap<String, Verdict>, Offline>> {
         self.calls.set(self.calls.get() + 1);
         self.states
             .borrow_mut()
             .push(serde_json::to_value(request.state).unwrap());
-        if self.calls.get() > self.answers_before_offline {
-            return Err(Offline);
-        }
         let fails = request.state.snippet.contains("let ");
-        Ok(request
-            .traits
-            .iter()
-            .map(|definition| (definition.slug.clone(), verdict(fails)))
-            .collect())
+        let answer = if self.calls.get() > self.answers_before_offline {
+            Err(Offline)
+        } else {
+            Ok(request
+                .traits
+                .iter()
+                .map(|definition| (definition.slug.clone(), verdict(fails)))
+                .collect())
+        };
+        std::future::ready(answer)
     }
 }
 
