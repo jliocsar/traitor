@@ -166,6 +166,31 @@ fn verdicts_that_came_back_are_kept_when_another_request_fails() {
 }
 
 #[test]
+fn a_new_binary_file_is_never_asked_about() {
+    let directory = repository("{}");
+    fs::write(
+        directory.path().join("src/blob.ts"),
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR",
+    )
+    .unwrap();
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let report = block_on(check(
+        &repository,
+        None,
+        &FakeJudge::new(),
+        &cache_in(&cache),
+    ))
+    .unwrap();
+    assert!(
+        report
+            .findings
+            .iter()
+            .all(|finding| finding.path != "src/blob.ts")
+    );
+}
+
+#[test]
 fn a_range_reads_files_from_its_last_commit() {
     let directory = repository("{}");
     git(directory.path(), &["add", "-A"]);

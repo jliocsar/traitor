@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use snafu::{ResultExt, Snafu};
 
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const BINARY_SNIFF_BYTES: usize = 8000;
 
 #[derive(Debug, Snafu)]
 pub enum GitError {
@@ -121,13 +122,14 @@ impl Repository {
         &self,
         comparison: &Comparison,
         path: &str,
-    ) -> Result<String, GitError> {
-        match &comparison.head {
-            Some(head) => self.git(&["show", &format!("{head}:{path}")]),
+    ) -> Result<Option<String>, GitError> {
+        let text = match &comparison.head {
+            Some(head) => self.git(&["show", &format!("{head}:{path}")])?,
             None => std::fs::read(self.root.join(path))
                 .map(text_from_bytes)
-                .context(ReadWorkingTreeSnafu { path }),
-        }
+                .context(ReadWorkingTreeSnafu { path })?,
+        };
+        Ok((!looks_binary(&text)).then_some(text))
     }
 
     fn default_base(&self) -> String {
@@ -190,26 +192,74 @@ fn text_from_bytes(bytes: Vec<u8>) -> String {
         .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
 }
 
+fn looks_binary(text: &str) -> bool {
+    text.as_bytes()
+        .iter()
+        .take(BINARY_SNIFF_BYTES)
+        .any(|byte| *byte == 0)
+}
+
 fn parse_diff(diff: &str) -> Vec<ChangedFile> {
     let mut files: Vec<ChangedFile> = Vec::new();
+    let mut current: Option<ChangedFile> = None;
     let mut in_file_header = false;
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
+            files.extend(current.take());
             in_file_header = true;
-        } else if in_file_header && let Some(path) = line.strip_prefix("+++ b/") {
-            files.push(ChangedFile {
-                path: path.to_string(),
+        } else if in_file_header && let Some(path) = line.strip_prefix("+++ ") {
+            current = new_path(path).map(|path| ChangedFile {
+                path,
                 changes: Vec::new(),
             });
-        } else if let Some(range) = line.strip_prefix("@@ ").and_then(parse_hunk_header)
-            && let Some(file) = files.last_mut()
-        {
+        } else if let Some(header) = line.strip_prefix("@@ ") {
             in_file_header = false;
-            file.changes.push(range);
+            if let Some(file) = current.as_mut()
+                && let Some(range) = parse_hunk_header(header)
+            {
+                file.changes.push(range);
+            }
         }
     }
+    files.extend(current);
     files.retain(|file| !file.changes.is_empty());
     files
+}
+
+fn new_path(header_path: &str) -> Option<String> {
+    let path = if header_path.starts_with('"') {
+        unquote(header_path)?
+    } else {
+        header_path.to_string()
+    };
+    path.strip_prefix("b/").map(str::to_string)
+}
+
+fn unquote(quoted: &str) -> Option<String> {
+    let mut escaped = quoted.strip_prefix('"')?.strip_suffix('"')?.bytes();
+    let mut bytes = Vec::new();
+    while let Some(byte) = escaped.next() {
+        if byte != b'\\' {
+            bytes.push(byte);
+            continue;
+        }
+        bytes.push(match escaped.next()? {
+            b'a' => 0x07,
+            b'b' => 0x08,
+            b't' => b'\t',
+            b'n' => b'\n',
+            b'v' => 0x0b,
+            b'f' => 0x0c,
+            b'r' => b'\r',
+            high @ b'0'..=b'3' => {
+                let middle = escaped.next().filter(u8::is_ascii_digit)?;
+                let low = escaped.next().filter(u8::is_ascii_digit)?;
+                (high - b'0') * 64 + (middle - b'0') * 8 + (low - b'0')
+            }
+            other => other,
+        });
+    }
+    Some(text_from_bytes(bytes))
 }
 
 fn parse_hunk_header(header: &str) -> Option<LineRange> {

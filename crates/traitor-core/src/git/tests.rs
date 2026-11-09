@@ -36,3 +36,33 @@ fn reads_added_ranges_from_a_zero_context_diff() {
         }]
     );
 }
+
+#[test]
+fn a_quoted_path_is_unquoted() {
+    let diff = "diff --git \"a/we\\\"ird\\303\\251.ts\" \"b/we\\\"ird\\303\\251.ts\"\nindex 1..2 100644\n--- \"a/we\\\"ird\\303\\251.ts\"\n+++ \"b/we\\\"ird\\303\\251.ts\"\n@@ -1 +1 @@\n-x\n+y\n";
+    assert_eq!(
+        parse_diff(diff),
+        vec![ChangedFile {
+            path: "we\"ird\u{e9}.ts".to_string(),
+            changes: vec![LineRange { first: 1, last: 1 }],
+        }]
+    );
+}
+
+#[test]
+fn hunks_under_a_header_it_cannot_read_stay_off_the_previous_file() {
+    let diff = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-x\n+y\ndiff --git a/c.ts c/c.ts\n--- a/c.ts\n+++ c/c.ts\n@@ -9 +9 @@\n-x\n+y\n";
+    assert_eq!(
+        parse_diff(diff),
+        vec![ChangedFile {
+            path: "a.ts".to_string(),
+            changes: vec![LineRange { first: 1, last: 1 }],
+        }]
+    );
+}
+
+#[test]
+fn text_with_a_nul_byte_looks_binary() {
+    assert!(looks_binary("\u{89}PNG\r\n\u{1a}\n\0\0\0\rIHDR"));
+    assert!(!looks_binary("export const a = 1\n"));
+}

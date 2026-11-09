@@ -96,7 +96,9 @@ pub async fn check<'repository, J: Judge>(
         if traits.is_empty() {
             continue;
         }
-        let source = git.read_file(&comparison, &file.path)?;
+        let Some(source) = git.read_file(&comparison, &file.path)? else {
+            continue;
+        };
         changed.extend(
             snippets_for_changes(&file.path, &source, &file.changes)
                 .into_iter()
