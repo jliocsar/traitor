@@ -6,8 +6,7 @@ A trait is a folder, `.agents/traits/<slug>/`, shaped like an Agent Skill:
 .agents/traits/railway-not-guards/
 ├── TRAIT.md
 ├── pass/   # cases that should get a pass verdict, one snippet per file
-├── fail/   # cases that should get a fail verdict
-└── n-a/    # cases with nothing the trait is about
+└── fail/   # cases that should get a fail verdict
 ```
 
 `TRAIT.md` is Markdown with YAML frontmatter, the same shape as `SKILL.md`, so agents already read and write it well. The folder name is the slug. The frontmatter has four fields, all single words:
@@ -17,7 +16,7 @@ A trait is a folder, `.agents/traits/<slug>/`, shaped like an Agent Skill:
 - `expect`: the one statement Jev judges against. Nothing else in the file counts as the requirement, and exceptions are written into it.
 - `paths`: globs. A trait is never asked about a file its globs don't match.
 
-The body is prose for people, such as the reasoning behind the trait or links, and is never sent. The files in `pass/`, `fail/` and `n-a/` are cases, also never sent: testing a trait against snippets Jev was just shown would pass every time and prove nothing. A case's file extension picks its parser.
+The body is prose for people, such as the reasoning behind the trait or links, and is never sent. The files in `pass/` and `fail/` are cases, also never sent: testing a trait against snippets Jev was just shown would pass every time and prove nothing. A case's file extension picks its parser.
 
 Nothing is sent as examples. Spike 1 found that examples in the question made no measurable difference, and the case folders can't double as examples without making `traitor test` meaningless. If examples ever help on a harder trait, they can come back as their own thing; the cache key covers the question's wording, so adding them invalidates old verdicts by itself.
 

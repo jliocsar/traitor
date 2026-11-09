@@ -4,7 +4,7 @@ use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
-use crate::test_support::{FakeJudge, repository_with_trait};
+use crate::test_support::{FakeJudge, repository_with_trait, verdict};
 
 const CASES: &str = ".agents/traits/railway-not-guards";
 
@@ -57,17 +57,19 @@ fn each_case_is_judged_against_the_verdict_its_folder_names() {
 }
 
 #[test]
-fn an_n_a_case_expects_n_a() {
-    let directory = repository_with_trait("{}");
-    write_case(
-        directory.path(),
-        "n-a",
-        "schema.ts",
-        "export const Shape = Schema.Struct({})\n",
-    );
-    let report = run(directory.path(), &[], &FakeJudge::new()).unwrap();
-    assert_eq!(report.results[0].expected, Answer::NotApplicable);
-    assert!(!report.results[0].holds());
+fn a_pass_case_also_holds_on_n_a() {
+    let mut not_applicable = verdict(false);
+    not_applicable.answer = Answer::NotApplicable;
+    let result = |expected, verdict| CaseResult {
+        trait_slug: "railway-not-guards".to_string(),
+        trait_title: "Railway, not guards".to_string(),
+        path: "case.ts".to_string(),
+        expected,
+        verdict,
+        from_cache: false,
+    };
+    assert!(result(Answer::Pass, not_applicable.clone()).holds());
+    assert!(!result(Answer::Fail, not_applicable).holds());
 }
 
 #[test]

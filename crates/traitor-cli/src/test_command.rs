@@ -77,7 +77,7 @@ fn print_case_report(report: &CaseReport) {
     );
     if !report.traits_without_cases.is_empty() {
         println!(
-            "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/pass, fail and n-a.",
+            "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/pass and fail.",
             report.traits_without_cases.join(", ")
         );
     }
