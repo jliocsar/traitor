@@ -117,7 +117,7 @@ fn split_frontmatter(contents: &str) -> Option<&str> {
         .or_else(|| contents.strip_prefix("---\r\n"))?;
     let mut offset = 0;
     for line in rest.split_inclusive('\n') {
-        if line.trim_end_matches(['\n', '\r']) == "---" {
+        if line.trim_end() == "---" {
             return Some(&rest[..offset]);
         }
         offset += line.len();

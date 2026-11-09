@@ -50,3 +50,9 @@ fn empty_frontmatter_is_invalid_rather_than_missing() {
         Err(TraitDefinitionError::InvalidFrontmatter { .. })
     );
 }
+
+#[test]
+fn trailing_spaces_after_the_closing_dashes_are_fine() {
+    let contents = RAILWAY.replacen("\n---\n\n", "\n--- \n\n", 1);
+    assert!(TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), &contents).is_ok());
+}

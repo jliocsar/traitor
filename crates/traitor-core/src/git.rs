@@ -227,6 +227,7 @@ fn parse_diff(diff: &str) -> Vec<ChangedFile> {
 }
 
 fn new_path(header_path: &str) -> Option<String> {
+    let header_path = header_path.strip_suffix('\t').unwrap_or(header_path);
     let path = if header_path.starts_with('"') {
         unquote(header_path)?
     } else {
@@ -271,7 +272,7 @@ fn parse_hunk_header(header: &str) -> Option<LineRange> {
     match count {
         0 => Some(LineRange {
             first: start.max(1),
-            last: start.max(1),
+            last: start + 1,
         }),
         _ => Some(LineRange {
             first: start,

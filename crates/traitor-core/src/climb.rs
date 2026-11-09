@@ -123,7 +123,8 @@ pub(crate) fn snippets_for_changes(
             None => unplaced.push(line),
         }
     }
-    selections.extend(lines.windows(unplaced));
+    let windows = lines.windows(unplaced, &selections);
+    selections.extend(windows);
     outermost(selections)
         .into_iter()
         .map(|selection| lines.snippet(selection))
@@ -269,20 +270,44 @@ impl<'source> Lines<'source> {
             })
     }
 
-    fn windows(&self, mut changed: Vec<usize>) -> Vec<Selection> {
+    fn windows(&self, mut changed: Vec<usize>, placed: &[Selection]) -> Vec<Selection> {
         changed.sort_unstable();
         changed.dedup();
+        let taken: Vec<(usize, usize)> = placed
+            .iter()
+            .map(|selection| {
+                (
+                    self.line_of(selection.start_byte),
+                    self.line_of(selection.end_byte.saturating_sub(1)),
+                )
+            })
+            .collect();
+        let is_taken = |line: usize| {
+            taken
+                .iter()
+                .any(|(first, last)| (*first..=*last).contains(&line))
+        };
         let mut windows = Vec::new();
         let mut previous_last = 0;
         let mut rest = changed.as_slice();
         while let Some(&line) = rest.first() {
-            let first = line.saturating_sub(LINE_WINDOW).max(previous_last + 1);
+            let floor = taken
+                .iter()
+                .map(|(_, last)| *last)
+                .filter(|last| *last < line)
+                .fold(previous_last, usize::max)
+                + 1;
+            let mut first = line.saturating_sub(LINE_WINDOW).max(floor);
+            while first < line && !self.lines_fit(first, line) {
+                first += 1;
+            }
             let mut last = line;
             loop {
                 let covered = rest.partition_point(|changed| *changed <= last);
                 let next = last + 1;
                 if next > self.starts.len()
                     || next > rest[covered - 1] + LINE_WINDOW
+                    || is_taken(next)
                     || !self.lines_fit(first, next)
                 {
                     break;

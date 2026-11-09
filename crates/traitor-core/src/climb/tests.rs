@@ -229,3 +229,28 @@ fn an_unknown_language_falls_back_to_a_line_window() {
         vec![(10, 50)]
     );
 }
+
+#[test]
+fn leading_context_gives_way_to_the_budget() {
+    let context = format!("{}\n", "x".repeat(200)).repeat(20);
+    let source = format!("{context}changed\n");
+    let snippets = snippets_for_changes("src/x.py", &source, &[lines(21, 21)]);
+    assert!(
+        snippets
+            .iter()
+            .all(|snippet| estimate_token_count(&snippet.text) <= BUDGET_TOKENS)
+    );
+    assert_eq!(snippets.last().map(|snippet| snippet.last_line), Some(21));
+}
+
+#[test]
+fn a_window_stops_at_a_unit_that_was_placed() {
+    let broken = "function broken( {\n  return 1\n}\n";
+    let source = format!("{MODULE}\n{broken}\n{MODULE}");
+    let snippets = snippets_for_changes("src/module.ts", &source, &[LineRange::WHOLE_FILE]);
+    assert!(
+        snippets
+            .windows(2)
+            .all(|pair| pair[0].last_line < pair[1].first_line)
+    );
+}

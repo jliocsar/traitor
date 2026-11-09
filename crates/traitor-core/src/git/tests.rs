@@ -26,7 +26,7 @@ fn reads_added_ranges_from_a_zero_context_diff() {
                 LineRange { first: 3, last: 4 },
                 LineRange {
                     first: 11,
-                    last: 11
+                    last: 12
                 },
                 LineRange {
                     first: 20,
@@ -65,4 +65,25 @@ fn hunks_under_a_header_it_cannot_read_stay_off_the_previous_file() {
 fn text_with_a_nul_byte_looks_binary() {
     assert!(looks_binary("\u{89}PNG\r\n\u{1a}\n\0\0\0\rIHDR"));
     assert!(!looks_binary("export const a = 1\n"));
+}
+
+#[test]
+fn the_tab_git_adds_after_a_path_with_a_space_is_not_part_of_it() {
+    let diff = "diff --git a/my file.ts b/my file.ts\n--- a/my file.ts\t\n+++ b/my file.ts\t\n@@ -1 +1 @@\n-x\n+y\ndiff --git \"a/sp \\\"q.ts\" \"b/sp \\\"q.ts\"\n--- \"a/sp \\\"q.ts\"\t\n+++ \"b/sp \\\"q.ts\"\t\n@@ -2 +2 @@\n-x\n+y\n";
+    assert_eq!(
+        parse_diff(diff)
+            .into_iter()
+            .map(|file| file.path)
+            .collect::<Vec<_>>(),
+        vec!["my file.ts".to_string(), "sp \"q.ts".to_string()]
+    );
+}
+
+#[test]
+fn a_deletion_covers_the_lines_on_both_sides_of_it() {
+    let diff = "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n@@ -3,3 +2,0 @@\n-def guard(x):\n-    assert x\n-\n";
+    assert_eq!(
+        parse_diff(diff)[0].changes,
+        vec![LineRange { first: 2, last: 3 }]
+    );
 }
