@@ -9,6 +9,7 @@ use serde::Deserialize;
 use snafu::{ResultExt, Snafu, ensure};
 
 use crate::trait_definition::{TraitDefinitionError, compile_globs};
+use crate::verdict::Verdict;
 
 pub const CONFIG_PATH: &str = ".agents/traitor.json";
 
@@ -93,7 +94,7 @@ struct ExemptionFile {
     reason: String,
 }
 
-pub struct Config {
+pub(crate) struct Config {
     traits: BTreeMap<String, TraitPolicy>,
 }
 
@@ -103,7 +104,7 @@ struct TraitPolicy {
 }
 
 impl Config {
-    pub fn load(repository_root: &Path) -> Result<Self, ConfigError> {
+    pub(crate) fn load(repository_root: &Path) -> Result<Self, ConfigError> {
         let path = repository_root.join(CONFIG_PATH);
         let contents = fs::read(&path).map_err(|source| match source.kind() {
             ErrorKind::NotFound => ConfigError::MissingConfig { path: path.clone() },
@@ -115,7 +116,7 @@ impl Config {
         Self::parse(&path, &contents)
     }
 
-    pub fn parse(path: &Path, contents: &[u8]) -> Result<Self, ConfigError> {
+    pub(crate) fn parse(path: &Path, contents: &[u8]) -> Result<Self, ConfigError> {
         let file: ConfigFile =
             serde_json::from_slice(contents).context(InvalidConfigSnafu { path })?;
         let traits = file
@@ -129,28 +130,22 @@ impl Config {
         Ok(Self { traits })
     }
 
-    pub fn threshold(&self, slug: &str) -> Option<f64> {
-        self.traits.get(slug).and_then(|policy| policy.threshold)
+    pub(crate) fn fails_check(&self, slug: &str, verdict: &Verdict) -> bool {
+        self.traits
+            .get(slug)
+            .and_then(|policy| policy.threshold)
+            .is_some_and(|threshold| verdict.probabilities.fail >= threshold)
     }
 
-    pub fn is_exempt(&self, slug: &str, path: &str) -> bool {
+    pub(crate) fn is_exempt(&self, slug: &str, path: &str) -> bool {
         self.traits
             .get(slug)
             .is_some_and(|policy| policy.exempt.is_match(path))
     }
 
-    pub fn configured_traits(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn configured_traits(&self) -> impl Iterator<Item = &str> {
         self.traits.keys().map(String::as_str)
     }
-}
-
-pub fn config_json_schema() -> String {
-    let schema = schemars::generate::SchemaSettings::draft2020_12()
-        .into_generator()
-        .into_root_schema_for::<ConfigFile>();
-    let mut text = serde_json::to_string_pretty(&schema).expect("a schema always serializes");
-    text.push('\n');
-    text
 }
 
 impl TraitPolicy {

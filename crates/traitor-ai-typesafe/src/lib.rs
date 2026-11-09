@@ -36,7 +36,7 @@ pub struct TypeSafeJudge {
 #[derive(Serialize)]
 struct SystemOneRequest<'request> {
     model: &'static str,
-    state: &'request SnippetState,
+    state: &'request SnippetState<'request>,
     questions: BTreeMap<&'request str, ChoiceQuestion<'request>>,
 }
 
@@ -45,7 +45,7 @@ struct ChoiceQuestion<'request> {
     #[serde(rename = "type")]
     kind: &'static str,
     #[serde(flatten)]
-    question: &'request Question,
+    question: Question<'request>,
 }
 
 #[derive(Deserialize)]
@@ -89,7 +89,7 @@ impl Judge for TypeSafeJudge {
 
     async fn judge(
         &self,
-        request: &JudgeRequest,
+        request: &JudgeRequest<'_>,
     ) -> Result<BTreeMap<String, Verdict>, TypeSafeError> {
         let api_key = self.api_key.as_deref().context(MissingApiKeySnafu)?;
         let response = self
@@ -113,16 +113,15 @@ impl Judge for TypeSafeJudge {
     }
 }
 
-fn request_body(request: &JudgeRequest) -> SystemOneRequest<'_> {
+fn request_body<'request>(request: &'request JudgeRequest<'request>) -> SystemOneRequest<'request> {
     SystemOneRequest {
         model: MODEL,
         state: &request.state,
         questions: request
-            .questions
-            .iter()
+            .questions()
             .map(|(slug, question)| {
                 (
-                    slug.as_str(),
+                    slug,
                     ChoiceQuestion {
                         kind: "choice",
                         question,
@@ -134,12 +133,13 @@ fn request_body(request: &JudgeRequest) -> SystemOneRequest<'_> {
 }
 
 fn verdicts(
-    request: &JudgeRequest,
+    request: &JudgeRequest<'_>,
     mut response: SystemOneResponse,
 ) -> Result<BTreeMap<String, Verdict>, TypeSafeError> {
     request
-        .questions
-        .keys()
+        .traits
+        .iter()
+        .map(|definition| &definition.slug)
         .map(|slug| {
             let answer = response
                 .answers
@@ -165,27 +165,31 @@ mod tests {
 
     use super::*;
 
-    fn request() -> JudgeRequest {
-        let definition = TraitDefinition::parse(
+    fn definition() -> TraitDefinition {
+        TraitDefinition::parse(
             "railway-not-guards",
             Path::new("TRAIT.md"),
             "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators.\npaths: [\"src/**/*.ts\"]\n---\n## Fail\n```ts\nlet total = 0\n```\n",
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    fn request(definition: &TraitDefinition) -> JudgeRequest<'_> {
         JudgeRequest {
             state: SnippetState {
-                path: "src/module.ts".to_string(),
-                language: "typescript".to_string(),
+                path: "src/module.ts",
+                language: "typescript",
                 signature: None,
-                snippet: "const LIMIT = 10".to_string(),
+                snippet: "const LIMIT = 10",
             },
-            questions: BTreeMap::from([(definition.slug.clone(), Question::about(&definition))]),
+            traits: vec![definition],
         }
     }
 
     #[test]
     fn the_request_body_is_one_choice_per_trait() {
-        insta::assert_json_snapshot!(request_body(&request()));
+        let definition = definition();
+        insta::assert_json_snapshot!(request_body(&request(&definition)));
     }
 
     #[test]
@@ -194,7 +198,8 @@ mod tests {
             r#"{"model":"jev-1.14.0","usage":{},"answers":{"railway-not-guards":{"type":"choice","choice":"n/a","confidence":0.76,"probabilities":{"pass":0.1,"fail":0.01,"n/a":0.89,"unsure":0}}}}"#,
         )
         .unwrap();
-        let verdicts = verdicts(&request(), response).unwrap();
+        let definition = definition();
+        let verdicts = verdicts(&request(&definition), response).unwrap();
         assert_eq!(verdicts["railway-not-guards"].answer, Answer::NotApplicable);
         assert_eq!(
             verdicts["railway-not-guards"].probabilities.not_applicable,

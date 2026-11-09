@@ -1,36 +1,27 @@
 use std::collections::BTreeMap;
-use std::path::Path;
-use std::process::ExitCode;
+use std::env;
 
 use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::cache::VerdictCache;
 use traitor_core::case::{CaseReport, CaseResult, test_cases};
+use traitor_core::configured_repository::ConfiguredRepository;
 use traitor_core::store::JsonStore;
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 use traitor_core::verdict::Answer;
 
-use crate::{EXIT_COULD_NOT_RUN, EXIT_TRAIT_BROKEN, run_in_current_directory};
+use crate::{CommandResult, Outcome};
 
-pub fn run_test(traits: &[String]) -> ExitCode {
+pub async fn run(traits: &[String]) -> CommandResult {
+    let repository = ConfiguredRepository::open(&env::current_dir()?)?;
     let judge = TypeSafeJudge::from_environment();
     let cache = VerdictCache::new(&JsonStore::in_user_cache_directory());
-    let outcome = run_in_current_directory(async |directory: &Path| {
-        test_cases(directory, traits, &judge, &cache).await
-    });
-    match outcome {
-        Ok(report) => {
-            print_case_report(&report);
-            if report.all_hold() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(EXIT_TRAIT_BROKEN)
-            }
-        }
-        Err(message) => {
-            eprintln!("traitor couldn't test: {message}");
-            ExitCode::from(EXIT_COULD_NOT_RUN)
-        }
-    }
+    let report = test_cases(&repository, traits, &judge, &cache).await?;
+    print_case_report(&report);
+    Ok(if report.all_hold() {
+        Outcome::Success
+    } else {
+        Outcome::TraitBroken
+    })
 }
 
 fn print_case_report(report: &CaseReport) {
@@ -47,7 +38,7 @@ fn print_case_report(report: &CaseReport) {
     let mut by_trait: BTreeMap<&str, Vec<&CaseResult>> = BTreeMap::new();
     for result in &report.results {
         by_trait
-            .entry(result.trait_slug.as_str())
+            .entry(result.definition.slug.as_str())
             .or_default()
             .push(result);
     }

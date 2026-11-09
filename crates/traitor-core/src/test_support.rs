@@ -4,11 +4,12 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use serde_json::Value;
 use snafu::Snafu;
 use tempfile::TempDir;
 
 use crate::judge::{Judge, JudgeRequest};
-use crate::question::SnippetState;
+use crate::trait_definition::TraitDefinition;
 use crate::verdict::{Answer, Probabilities, Verdict};
 
 pub const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators, not a reassigned let.\npaths:\n  - \"src/**/*.ts\"\n---\n";
@@ -19,7 +20,7 @@ pub struct Offline;
 
 pub struct FakeJudge {
     pub calls: Cell<usize>,
-    pub states: RefCell<Vec<SnippetState>>,
+    pub states: RefCell<Vec<Value>>,
     offline: bool,
 }
 
@@ -47,17 +48,22 @@ impl Judge for FakeJudge {
         "fake"
     }
 
-    async fn judge(&self, request: &JudgeRequest) -> Result<BTreeMap<String, Verdict>, Offline> {
+    async fn judge(
+        &self,
+        request: &JudgeRequest<'_>,
+    ) -> Result<BTreeMap<String, Verdict>, Offline> {
         self.calls.set(self.calls.get() + 1);
-        self.states.borrow_mut().push(request.state.clone());
+        self.states
+            .borrow_mut()
+            .push(serde_json::to_value(request.state).unwrap());
         if self.offline {
             return Err(Offline);
         }
         let fails = request.state.snippet.contains("let ");
         Ok(request
-            .questions
-            .keys()
-            .map(|slug| (slug.clone(), verdict(fails)))
+            .traits
+            .iter()
+            .map(|definition| (definition.slug.clone(), verdict(fails)))
             .collect())
     }
 }
@@ -74,6 +80,10 @@ pub fn verdict(fails: bool) -> Verdict {
             unsure: 0.0,
         },
     }
+}
+
+pub fn railway_definition() -> TraitDefinition {
+    TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), TRAIT).unwrap()
 }
 
 pub fn git(directory: &Path, arguments: &[&str]) {

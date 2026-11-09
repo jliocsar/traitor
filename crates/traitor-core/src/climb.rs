@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::Path;
 
 use tree_sitter::{Node, Parser, Tree};
@@ -91,16 +92,11 @@ impl Language {
     }
 }
 
-pub fn language_name(path: &str) -> String {
+pub fn language_name(path: &str) -> &str {
     Language::from_path(path)
-        .map(|language| language.name().to_string())
-        .or_else(|| {
-            Path::new(path)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "text".to_string())
+        .map(Language::name)
+        .or_else(|| Path::new(path).extension().and_then(OsStr::to_str))
+        .unwrap_or("text")
 }
 
 pub fn snippets_for_changes(path: &str, source: &str, changes: &[LineRange]) -> Vec<Snippet> {

@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::{self, DirEntry};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
@@ -80,17 +81,12 @@ pub fn load_trait_definitions(
     if !directory.is_dir() {
         return Ok(Vec::new());
     }
-    let mut folders = fs::read_dir(&directory)
-        .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+    visible_entries(&directory)
         .context(ListTraitsSnafu {
             directory: &directory,
         })?
-        .into_iter()
-        .filter(|entry| entry.path().is_dir())
-        .collect::<Vec<_>>();
-    folders.sort_by_key(|entry| entry.file_name());
-    folders
         .iter()
+        .filter(|entry| entry.path().is_dir())
         .map(|folder| {
             let slug = folder.file_name().to_string_lossy().into_owned();
             let path = folder.path().join(TRAIT_FILE);
@@ -100,7 +96,17 @@ pub fn load_trait_definitions(
         .collect()
 }
 
-pub fn compile_globs(path: &Path, globs: &[String]) -> Result<GlobSet, TraitDefinitionError> {
+pub(crate) fn visible_entries(directory: &Path) -> io::Result<Vec<DirEntry>> {
+    let mut entries: Vec<DirEntry> = fs::read_dir(directory)?.collect::<io::Result<_>>()?;
+    entries.retain(|entry| !entry.file_name().to_string_lossy().starts_with('.'));
+    entries.sort_by_key(DirEntry::file_name);
+    Ok(entries)
+}
+
+pub(crate) fn compile_globs(
+    path: &Path,
+    globs: &[String],
+) -> Result<GlobSet, TraitDefinitionError> {
     globs
         .iter()
         .try_fold(GlobSetBuilder::new(), |mut builder, glob| {

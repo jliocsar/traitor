@@ -98,8 +98,12 @@ pub fn respond(
 }
 
 fn identity(finding: &Finding) -> String {
-    let material = serde_json::to_vec(&(&finding.trait_slug, &finding.path, &finding.snippet.text))
-        .expect("strings always serialize");
+    let material = serde_json::to_vec(&(
+        &finding.definition.slug,
+        &finding.path,
+        &finding.snippet.text,
+    ))
+    .expect("strings always serialize");
     hex_sha256(&material)
 }
 
@@ -117,7 +121,7 @@ fn block_reason(failing: &[&Finding], unsure: &[&Finding]) -> String {
     let mut by_trait: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
     for finding in failing {
         by_trait
-            .entry(finding.trait_slug.as_str())
+            .entry(finding.definition.slug.as_str())
             .or_default()
             .push(finding);
     }
@@ -126,7 +130,7 @@ fn block_reason(failing: &[&Finding], unsure: &[&Finding]) -> String {
         let _ = write!(
             reason,
             "\n{} ({slug})\nwhy: {}\nexpect: {}\n",
-            first.trait_title, first.why, first.expect
+            first.definition.title, first.definition.why, first.definition.expect
         );
         for finding in findings {
             let _ = writeln!(
@@ -143,8 +147,8 @@ fn block_reason(failing: &[&Finding], unsure: &[&Finding]) -> String {
             let _ = writeln!(
                 reason,
                 "- {} ({}) at {}",
-                finding.trait_title,
-                finding.trait_slug,
+                finding.definition.title,
+                finding.definition.slug,
                 location(finding)
             );
         }
@@ -159,8 +163,8 @@ fn still_failing_message(failing: &[&Finding]) -> String {
         let _ = write!(
             message,
             "\n- {} ({}) at {}",
-            finding.trait_title,
-            finding.trait_slug,
+            finding.definition.title,
+            finding.definition.slug,
             location(finding)
         );
     }

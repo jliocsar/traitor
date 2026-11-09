@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use snafu::{ResultExt, Snafu};
 
 use crate::cache::VerdictCache;
-use crate::check::{CheckError, Setup, set_up};
 use crate::climb::language_name;
+use crate::configured_repository::ConfiguredRepository;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
-use crate::question::{Question, SnippetState};
-use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition};
+use crate::question::SnippetState;
+use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition, visible_entries};
 use crate::verdict::{Answer, Verdict};
 
 const CASE_DIRECTORIES: [(&str, Answer); 2] = [("pass", Answer::Pass), ("fail", Answer::Fail)];
@@ -16,8 +16,6 @@ const CASE_FILE_STEM: &str = "case";
 
 #[derive(Debug, Snafu)]
 pub enum CaseError {
-    #[snafu(transparent)]
-    SetUp { source: CheckError },
     #[snafu(display("there's no {TRAITS_DIRECTORY}/{slug}"))]
     UnknownTrait { slug: String },
     #[snafu(display("couldn't read {}: {source}", path.display()))]
@@ -30,16 +28,15 @@ pub enum CaseError {
 }
 
 #[derive(Debug, Clone)]
-pub struct CaseResult {
-    pub trait_slug: String,
-    pub trait_title: String,
+pub struct CaseResult<'repository> {
+    pub definition: &'repository TraitDefinition,
     pub path: String,
     pub expected: Answer,
     pub verdict: Verdict,
     pub from_cache: bool,
 }
 
-impl CaseResult {
+impl CaseResult<'_> {
     pub fn holds(&self) -> bool {
         match self.expected {
             Answer::Pass => matches!(self.verdict.answer, Answer::Pass | Answer::NotApplicable),
@@ -49,87 +46,77 @@ impl CaseResult {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CaseReport {
-    pub results: Vec<CaseResult>,
-    pub traits_without_cases: Vec<String>,
+pub struct CaseReport<'repository> {
+    pub results: Vec<CaseResult<'repository>>,
+    pub traits_without_cases: Vec<&'repository str>,
 }
 
-impl CaseReport {
+impl CaseReport<'_> {
     pub fn all_hold(&self) -> bool {
         self.results.iter().all(CaseResult::holds)
     }
 }
 
-struct Case<'definitions> {
-    definition: &'definitions TraitDefinition,
+struct Case<'repository> {
+    definition: &'repository TraitDefinition,
     path: String,
+    neutral_path: String,
     expected: Answer,
     contents: String,
 }
 
-pub async fn test_cases<J: Judge>(
-    directory: &Path,
+impl Case<'_> {
+    fn request(&self) -> JudgeRequest<'_> {
+        JudgeRequest {
+            state: SnippetState {
+                path: &self.neutral_path,
+                language: language_name(&self.path),
+                signature: None,
+                snippet: &self.contents,
+            },
+            traits: vec![self.definition],
+        }
+    }
+}
+
+pub async fn test_cases<'repository, J: Judge>(
+    repository: &'repository ConfiguredRepository,
     slugs: &[String],
     judge: &J,
     cache: &VerdictCache,
-) -> Result<CaseReport, CaseError> {
-    let Setup {
-        repository,
-        definitions,
-        ..
-    } = set_up(directory)?;
-    if let Some(slug) = slugs.iter().find(|slug| {
-        !definitions
-            .iter()
-            .any(|definition| definition.slug == **slug)
-    }) {
+) -> Result<CaseReport<'repository>, CaseError> {
+    if let Some(slug) = slugs
+        .iter()
+        .find(|slug| repository.definition(slug).is_none())
+    {
         return UnknownTraitSnafu { slug }.fail();
     }
-    let chosen: Vec<&TraitDefinition> = definitions
+    let chosen = repository
+        .definitions()
         .iter()
-        .filter(|definition| slugs.is_empty() || slugs.contains(&definition.slug))
-        .collect();
+        .filter(|definition| slugs.is_empty() || slugs.contains(&definition.slug));
 
     let mut cases = Vec::new();
     let mut traits_without_cases = Vec::new();
     for definition in chosen {
-        let found = cases_of(repository.root(), definition)?;
+        let found = cases_of(repository.git().root(), definition)?;
         if found.is_empty() {
-            traits_without_cases.push(definition.slug.clone());
+            traits_without_cases.push(definition.slug.as_str());
         }
         cases.extend(found);
     }
 
-    let requests: Vec<JudgeRequest> = cases
-        .iter()
-        .map(|case| JudgeRequest {
-            state: SnippetState {
-                path: neutral_path(&case.path),
-                language: language_name(&case.path),
-                signature: None,
-                snippet: case.contents.clone(),
-            },
-            questions: [(
-                case.definition.slug.clone(),
-                Question::about(case.definition),
-            )]
-            .into(),
-        })
-        .collect();
-    let answers = judge_through_cache(judge, cache, &requests).await?;
+    let requests: Vec<JudgeRequest> = cases.iter().map(Case::request).collect();
+    let judged = judge_through_cache(judge, cache, &requests).await?;
     let results = cases
         .into_iter()
-        .zip(answers)
-        .filter_map(|(case, mut answers)| {
-            let judged = answers.remove(&case.definition.slug)?;
-            Some(CaseResult {
-                trait_slug: case.definition.slug.clone(),
-                trait_title: case.definition.title.clone(),
-                path: case.path,
-                expected: case.expected,
-                verdict: judged.verdict,
-                from_cache: judged.from_cache,
-            })
+        .zip(judged.into_iter().flatten())
+        .map(|(case, judged)| CaseResult {
+            definition: case.definition,
+            path: case.path,
+            expected: case.expected,
+            verdict: judged.verdict,
+            from_cache: judged.from_cache,
         })
         .collect();
     Ok(CaseReport {
@@ -138,10 +125,10 @@ pub async fn test_cases<J: Judge>(
     })
 }
 
-fn cases_of<'definitions>(
+fn cases_of<'repository>(
     repository_root: &Path,
-    definition: &'definitions TraitDefinition,
-) -> Result<Vec<Case<'definitions>>, CaseError> {
+    definition: &'repository TraitDefinition,
+) -> Result<Vec<Case<'repository>>, CaseError> {
     let trait_directory = Path::new(TRAITS_DIRECTORY).join(&definition.slug);
     let mut cases = Vec::new();
     for (folder, expected) in CASE_DIRECTORIES {
@@ -149,21 +136,18 @@ fn cases_of<'definitions>(
         if !directory.is_dir() {
             continue;
         }
-        let mut names: Vec<String> = fs::read_dir(&directory)
-            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+        let files = visible_entries(&directory)
             .context(ReadCaseSnafu { path: &directory })?
             .into_iter()
-            .filter(|entry| entry.path().is_file())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .filter(|name| !name.starts_with('.'))
-            .collect();
-        names.sort();
-        for name in names {
-            let path = directory.join(&name);
-            let contents = fs::read_to_string(&path).context(ReadCaseSnafu { path: &path })?;
+            .filter(|entry| entry.path().is_file());
+        for file in files {
+            let name = file.file_name().to_string_lossy().into_owned();
+            let contents =
+                fs::read_to_string(file.path()).context(ReadCaseSnafu { path: file.path() })?;
             cases.push(Case {
                 definition,
                 path: format!("{}/{folder}/{name}", trait_directory.display()),
+                neutral_path: neutral_path(&name),
                 expected,
                 contents,
             });
@@ -172,8 +156,8 @@ fn cases_of<'definitions>(
     Ok(cases)
 }
 
-fn neutral_path(path: &str) -> String {
-    Path::new(path)
+fn neutral_path(name: &str) -> String {
+    Path::new(name)
         .extension()
         .and_then(|extension| extension.to_str())
         .map_or_else(

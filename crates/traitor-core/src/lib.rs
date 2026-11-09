@@ -3,6 +3,7 @@ pub mod case;
 pub mod check;
 pub mod climb;
 pub mod config;
+pub mod configured_repository;
 pub mod git;
 pub mod init;
 pub mod judge;

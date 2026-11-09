@@ -1,11 +1,16 @@
+use std::sync::LazyLock;
+
 use tempfile::TempDir;
 
 use super::*;
 use crate::climb::Snippet;
-use crate::test_support::verdict;
+use crate::test_support::{railway_definition, verdict};
+use crate::trait_definition::TraitDefinition;
 use crate::verdict::Verdict;
 
-fn finding(path: &str, text: &str, verdict: Verdict, fails_check: bool) -> Finding {
+static RAILWAY: LazyLock<TraitDefinition> = LazyLock::new(railway_definition);
+
+fn finding(path: &str, text: &str, verdict: Verdict, fails_check: bool) -> Finding<'static> {
     Finding {
         path: path.to_string(),
         snippet: Snippet {
@@ -14,17 +19,14 @@ fn finding(path: &str, text: &str, verdict: Verdict, fails_check: bool) -> Findi
             signature: None,
             text: text.to_string(),
         },
-        trait_slug: "railway-not-guards".to_string(),
-        trait_title: "Railway, not guards".to_string(),
-        why: "Guards hide how a value flows.".to_string(),
-        expect: "A computed value flows through combinators.".to_string(),
+        definition: &RAILWAY,
         verdict,
         fails_check,
         from_cache: false,
     }
 }
 
-fn report(findings: Vec<Finding>) -> Report {
+fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
     Report {
         snippet_count: findings.len(),
         findings,
@@ -40,7 +42,11 @@ fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
     assert!(output.blocks());
     let reason = output.reason.unwrap();
     assert!(reason.contains("Railway, not guards (railway-not-guards)\n"));
-    assert!(reason.contains("expect: A computed value flows through combinators."));
+    assert!(
+        reason.contains(
+            "expect: A computed value flows through combinators, not a reassigned let.\n"
+        )
+    );
     assert!(reason.contains("- src/a.ts:1-3, p(fail) 0.97"));
     assert_eq!(blocked.len(), 1);
 }
