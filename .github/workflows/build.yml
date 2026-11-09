@@ -15,23 +15,18 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
-            builder: zigbuild
+            runner: ubuntu-26.04
           - target: aarch64-unknown-linux-musl
-            runner: ubuntu-latest
-            builder: zigbuild
+            runner: ubuntu-26.04-arm
           - target: x86_64-apple-darwin
-            runner: macos-latest
-            builder: build
+            runner: macos-26
           - target: aarch64-apple-darwin
-            runner: macos-latest
-            builder: build
+            runner: macos-26
           - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            builder: build
+            runner: windows-2025
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - if: inputs.version != ''
         shell: bash
         env:
@@ -45,14 +40,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - if: matrix.builder == 'zigbuild'
-        uses: mlugg/setup-zig@v2
-      - if: matrix.builder == 'zigbuild'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-      - run: cargo ${{ matrix.builder }} --release --locked --target ${{ matrix.target }} -p traitor-cli
-      - uses: actions/upload-artifact@v5
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p traitor-cli
+      - if: runner.os == 'Linux'
+        run: file target/${{ matrix.target }}/release/traitor | grep --quiet 'static'
+      - uses: actions/upload-artifact@v7
         with:
           name: traitor-${{ matrix.target }}
           path: |
