@@ -9,7 +9,7 @@ use traitor_core::verdict::{Answer, Probabilities, Verdict};
 
 pub const API_HOST: &str = "api.typesafe.ai";
 const SYSTEM_ONE_PATH: &str = "/v1/systemone";
-const MODEL: &str = "jev-latest";
+const MODEL: &str = "jev-1.14.0";
 const API_KEY_VARIABLE: &str = "TYPESAFE_API_KEY";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 

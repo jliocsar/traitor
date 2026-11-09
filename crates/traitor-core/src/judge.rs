@@ -28,6 +28,8 @@ impl<'repository> JudgeRequest<'_, 'repository> {
 pub trait Judge {
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// The model behind the verdicts. It is part of every cache key, so it has to change
+    /// whenever the judge could answer the same question differently.
     fn model(&self) -> &str;
 
     fn judge(

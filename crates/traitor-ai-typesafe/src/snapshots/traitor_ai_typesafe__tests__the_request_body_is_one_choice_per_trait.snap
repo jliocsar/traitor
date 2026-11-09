@@ -3,7 +3,7 @@ source: crates/traitor-ai-typesafe/src/lib.rs
 expression: request_body(&request())
 ---
 {
-  "model": "jev-latest",
+  "model": "jev-1.14.0",
   "state": {
     "path": "src/module.ts",
     "language": "typescript",
