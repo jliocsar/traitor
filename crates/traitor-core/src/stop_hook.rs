@@ -1,27 +1,35 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 
-use crate::check::{Finding, Report};
+use crate::cache::VerdictCache;
+use crate::check::{CheckError, Finding, Report, check};
+use crate::configured_repository::{ConfiguredRepository, OpenError};
+use crate::git::Repository;
+use crate::judge::Judge;
 use crate::store::{JsonStore, hex_sha256};
+use crate::trait_definition::TRAITS_DIRECTORY;
 use crate::verdict::Answer;
-
-const BLOCK: &str = "block";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct StopHookInput {
-    #[serde(default)]
     pub session_id: Option<String>,
-    #[serde(default)]
     pub cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Decision {
+    Block,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct StopHookOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decision: Option<&'static str>,
+    pub decision: Option<Decision>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(rename = "systemMessage", skip_serializing_if = "Option::is_none")]
@@ -41,30 +49,71 @@ impl StopHookOutput {
     }
 }
 
-pub struct BlockedFails {
+#[derive(Debug, Snafu)]
+enum StopCheckError {
+    #[snafu(transparent)]
+    Open { source: OpenError },
+    #[snafu(transparent)]
+    Check { source: CheckError },
+}
+
+pub async fn respond_to_stop<J: Judge>(
+    directory: &Path,
+    session_id: &str,
+    revision: Option<&str>,
+    judge: &J,
+    store: &JsonStore,
+) -> StopHookOutput {
+    let Ok(git) = Repository::discover(directory) else {
+        return StopHookOutput::default();
+    };
+    if !git.root().join(TRAITS_DIRECTORY).is_dir() {
+        return StopHookOutput::default();
+    }
+    check_for_stop(git, session_id, revision, judge, store)
+        .await
+        .unwrap_or_else(|error| StopHookOutput::could_not_check(&error.to_string()))
+}
+
+async fn check_for_stop<J: Judge>(
+    git: Repository,
+    session_id: &str,
+    revision: Option<&str>,
+    judge: &J,
+    store: &JsonStore,
+) -> Result<StopHookOutput, StopCheckError> {
+    let repository = ConfiguredRepository::load(git)?;
+    let report = check(&repository, revision, judge, &VerdictCache::new(store)).await?;
+    let blocked_fails = BlockedFails::new(store);
+    let (output, now_failing) = respond(&report, &blocked_fails.read(session_id));
+    blocked_fails.write(session_id, &now_failing);
+    Ok(output)
+}
+
+struct BlockedFails {
     store: JsonStore,
 }
 
 impl BlockedFails {
-    pub fn new(store: &JsonStore) -> Self {
+    fn new(store: &JsonStore) -> Self {
         Self {
             store: store.subdirectory("stop-hook"),
         }
     }
 
-    pub fn read(&self, session_id: &str) -> BTreeSet<String> {
+    fn read(&self, session_id: &str) -> BTreeSet<String> {
         self.store
             .read(&hex_sha256(session_id.as_bytes()))
             .unwrap_or_default()
     }
 
-    pub fn write(&self, session_id: &str, fails: &BTreeSet<String>) {
+    fn write(&self, session_id: &str, fails: &BTreeSet<String>) {
         self.store
             .write_best_effort(&hex_sha256(session_id.as_bytes()), fails);
     }
 }
 
-pub fn respond(
+fn respond(
     report: &Report,
     already_blocked: &BTreeSet<String>,
 ) -> (StopHookOutput, BTreeSet<String>) {
@@ -89,7 +138,7 @@ pub fn respond(
         }
     } else {
         StopHookOutput {
-            decision: Some(BLOCK),
+            decision: Some(Decision::Block),
             reason: Some(block_reason(&failing, &unsure)),
             system_message: None,
         }

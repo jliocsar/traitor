@@ -1,10 +1,12 @@
+use std::fs;
 use std::sync::LazyLock;
 
+use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
 use crate::climb::Snippet;
-use crate::test_support::{railway_definition, verdict};
+use crate::test_support::{FakeJudge, git, railway_definition, repository_with_trait, verdict};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::Verdict;
 
@@ -126,7 +128,7 @@ fn blocked_fails_persist_per_session() {
 #[test]
 fn the_output_is_what_a_stop_hook_reads() {
     let output = StopHookOutput {
-        decision: Some("block"),
+        decision: Some(Decision::Block),
         reason: Some("fix it".to_string()),
         system_message: None,
     };
@@ -137,5 +139,53 @@ fn the_output_is_what_a_stop_hook_reads() {
     assert_eq!(
         serde_json::to_string(&StopHookOutput::default()).unwrap(),
         "{}"
+    );
+}
+
+fn stop(directory: &Path, store: &JsonStore) -> StopHookOutput {
+    block_on(respond_to_stop(
+        directory,
+        "session",
+        None,
+        &FakeJudge::new(),
+        store,
+    ))
+}
+
+#[test]
+fn a_stop_blocks_on_new_fails_once_then_lets_the_agent_stop() {
+    let directory =
+        repository_with_trait(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+    fs::create_dir_all(directory.path().join("src")).unwrap();
+    fs::write(directory.path().join("src/module.ts"), "let label = ''\n").unwrap();
+    let cache = TempDir::new().unwrap();
+    let store = JsonStore::at(cache.path().to_path_buf());
+    assert!(stop(directory.path(), &store).blocks());
+    assert!(!stop(directory.path(), &store).blocks());
+}
+
+#[test]
+fn a_repo_without_traits_gets_an_empty_answer() {
+    let directory = TempDir::new().unwrap();
+    git(directory.path(), &["init", "-q"]);
+    let cache = TempDir::new().unwrap();
+    assert_eq!(
+        stop(directory.path(), &JsonStore::at(cache.path().to_path_buf())),
+        StopHookOutput::default()
+    );
+}
+
+#[test]
+fn a_repo_with_traits_but_no_config_says_why_it_couldnt_check() {
+    let directory = repository_with_trait("{}");
+    fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
+    let cache = TempDir::new().unwrap();
+    let output = stop(directory.path(), &JsonStore::at(cache.path().to_path_buf()));
+    assert!(!output.blocks());
+    assert!(
+        output
+            .system_message
+            .unwrap()
+            .starts_with("traitor couldn't check: ")
     );
 }
