@@ -1,6 +1,5 @@
 use snafu::Snafu;
 
-use crate::cache::VerdictCache;
 use crate::climb::{Snippet, snippets_for_changes};
 use crate::configured_repository::ConfiguredRepository;
 use crate::git::GitError;
@@ -94,12 +93,10 @@ pub async fn check<'repository, J: Judge>(
         );
     }
 
-    let requests: Vec<JudgeRequest> = changed.iter().map(ChangedSnippet::request).collect();
-    let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
-    let snippet_count = changed.len();
-    let findings = changed
+    let judged = judge_through_cache(judge, store, changed, ChangedSnippet::request).await?;
+    let snippet_count = judged.len();
+    let findings = judged
         .into_iter()
-        .zip(judged)
         .flat_map(|(changed, judged)| {
             judged.into_iter().map(move |judged| Finding {
                 path: changed.path.clone(),

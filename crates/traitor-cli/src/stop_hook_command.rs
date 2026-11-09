@@ -1,13 +1,14 @@
 use std::env;
 use std::error::Error;
 use std::io::{self, Read};
-use std::process::ExitCode;
 
 use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::stop_hook::{StopHookInput, StopHookOutput, respond_to_stop};
 use traitor_core::store::JsonStore;
 
-pub async fn run(revision: Option<&str>) -> ExitCode {
+use crate::{CommandResult, Outcome};
+
+pub async fn run(revision: Option<&str>) -> CommandResult {
     let mut stdin = String::new();
     let input: StopHookInput = io::stdin()
         .read_to_string(&mut stdin)
@@ -21,7 +22,7 @@ pub async fn run(revision: Option<&str>) -> ExitCode {
         "{}",
         serde_json::to_string(&output).expect("hook output always serializes")
     );
-    ExitCode::SUCCESS
+    Ok(Outcome::Success)
 }
 
 async fn respond(

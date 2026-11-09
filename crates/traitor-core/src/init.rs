@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use semver::Version;
@@ -8,7 +7,7 @@ use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::config::{
-    CONFIG_PATH, Config, ConfigError, SCHEMA_KEY, new_config_file, schema_url,
+    CONFIG_PATH, Config, ConfigError, SCHEMA_KEY, new_config_file, read_if_present, schema_url,
     version_in_schema_url,
 };
 use crate::git::{GitError, Repository};
@@ -17,11 +16,6 @@ use crate::git::{GitError, Repository};
 pub enum InitError {
     #[snafu(transparent)]
     Git { source: GitError },
-    #[snafu(display("couldn't read {}: {source}", path.display()))]
-    ReadConfig {
-        path: PathBuf,
-        source: std::io::Error,
-    },
     #[snafu(display("couldn't write {}: {source}", path.display()))]
     WriteConfig {
         path: PathBuf,
@@ -67,13 +61,12 @@ pub enum InitOutcome {
 pub fn init(directory: &Path, binary_version: &Version) -> Result<InitOutcome, InitError> {
     let repository = Repository::discover(directory)?;
     let path = repository.root().join(CONFIG_PATH);
-    match fs::read(&path) {
-        Ok(contents) => upgrade(&path, &contents, binary_version),
-        Err(source) if source.kind() == ErrorKind::NotFound => {
+    match read_if_present(&path)? {
+        Some(contents) => upgrade(&path, &contents, binary_version),
+        None => {
             write_config(&path, &new_config_file(binary_version))?;
             Ok(InitOutcome::Created)
         }
-        Err(source) => Err(InitError::ReadConfig { path, source }),
     }
 }
 
@@ -90,8 +83,8 @@ fn upgrade(
     let outcome = match config.get(SCHEMA_KEY) {
         None => InitOutcome::AddedSchema,
         Some(url) => {
-            let url = url.as_str().unwrap_or_default();
-            let config_version = version_in_schema_url(url).context(UnrecognizedSchemaSnafu {
+            let url = url.as_str().map_or_else(|| url.to_string(), str::to_string);
+            let config_version = version_in_schema_url(&url).context(UnrecognizedSchemaSnafu {
                 path,
                 url,
                 expected: &current_url,

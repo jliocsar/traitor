@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use semver::Version;
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use snafu::{ResultExt, Snafu, ensure};
+use snafu::{OptionExt, ResultExt, Snafu, ensure};
 
 use crate::glob::{GlobError, compile_globs};
 use crate::verdict::Verdict;
@@ -113,13 +113,7 @@ struct TraitPolicy {
 impl Config {
     pub(crate) fn load(repository_root: &Path) -> Result<Self, ConfigError> {
         let path = repository_root.join(CONFIG_PATH);
-        let contents = fs::read(&path).map_err(|source| match source.kind() {
-            ErrorKind::NotFound => ConfigError::MissingConfig { path: path.clone() },
-            _ => ConfigError::ReadConfig {
-                path: path.clone(),
-                source,
-            },
-        })?;
+        let contents = read_if_present(&path)?.context(MissingConfigSnafu { path: &path })?;
         Self::parse(&path, &contents)
     }
 
@@ -152,6 +146,17 @@ impl Config {
 
     pub(crate) fn configured_traits(&self) -> impl Iterator<Item = &str> {
         self.traits.keys().map(String::as_str)
+    }
+}
+
+pub(crate) fn read_if_present(path: &Path) -> Result<Option<Vec<u8>>, ConfigError> {
+    match fs::read(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(ConfigError::ReadConfig {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 

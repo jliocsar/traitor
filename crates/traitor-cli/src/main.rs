@@ -61,7 +61,7 @@ async fn main() -> ExitCode {
         Command::Check {
             revision,
             format: Format::ClaudeCodeHook,
-        } => return stop_hook_command::run(revision.as_deref()).await,
+        } => ("check", stop_hook_command::run(revision.as_deref()).await),
         Command::Test { traits } => ("test", test_command::run(&traits).await),
     };
     match result {

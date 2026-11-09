@@ -42,6 +42,7 @@ pub struct TraitDefinition {
     pub why: String,
     pub expect: String,
     paths: GlobSet,
+    directory: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -64,11 +65,16 @@ impl TraitDefinition {
             why: frontmatter.why,
             expect: frontmatter.expect,
             paths: compile_globs(path, &frontmatter.paths)?,
+            directory: path.parent().map(Path::to_path_buf).unwrap_or_default(),
         })
     }
 
     pub fn label(&self) -> String {
         format!("{} ({})", self.title, self.slug)
+    }
+
+    pub(crate) fn directory(&self) -> &Path {
+        &self.directory
     }
 
     pub(crate) fn applies_to(&self, path: &str) -> bool {

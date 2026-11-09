@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use snafu::{ResultExt, Snafu};
 
-use crate::cache::VerdictCache;
 use crate::configured_repository::ConfiguredRepository;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
@@ -99,18 +98,16 @@ pub async fn test_cases<'repository, J: Judge>(
     let mut cases = Vec::new();
     let mut traits_without_cases = Vec::new();
     for definition in chosen {
-        let found = cases_of(repository.git().root(), definition)?;
+        let found = cases_of(definition)?;
         if found.is_empty() {
             traits_without_cases.push(definition.slug.as_str());
         }
         cases.extend(found);
     }
 
-    let requests: Vec<JudgeRequest> = cases.iter().map(Case::request).collect();
-    let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
-    let results = cases
+    let results = judge_through_cache(judge, store, cases, Case::request)
+        .await?
         .into_iter()
-        .zip(judged)
         .flat_map(|(case, judged)| {
             judged.into_iter().map(move |judged| CaseResult {
                 definition: judged.definition,
@@ -127,31 +124,24 @@ pub async fn test_cases<'repository, J: Judge>(
     })
 }
 
-fn cases_of<'repository>(
-    repository_root: &Path,
-    definition: &'repository TraitDefinition,
-) -> Result<Vec<Case<'repository>>, CaseError> {
-    let trait_directory = Path::new(TRAITS_DIRECTORY).join(&definition.slug);
+fn cases_of(definition: &TraitDefinition) -> Result<Vec<Case<'_>>, CaseError> {
     let mut cases = Vec::new();
     for (folder, expected) in CASE_DIRECTORIES {
-        let directory = repository_root.join(&trait_directory).join(folder);
+        let directory = definition.directory().join(folder);
         if !directory.is_dir() {
             continue;
         }
         let files = visible_entries(&directory)
             .context(ReadCaseSnafu { path: &directory })?
             .into_iter()
-            .map(|entry| entry.path())
-            .filter(|path| path.is_file());
+            .filter(|entry| entry.path().is_file());
         for file in files {
-            let name = file
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let contents = fs::read_to_string(&file).context(ReadCaseSnafu { path: &file })?;
+            let name = file.file_name().to_string_lossy().into_owned();
+            let path = file.path();
+            let contents = fs::read_to_string(&path).context(ReadCaseSnafu { path: &path })?;
             cases.push(Case {
                 definition,
-                path: format!("{}/{folder}/{name}", trait_directory.display()),
+                path: format!("{TRAITS_DIRECTORY}/{}/{folder}/{name}", definition.slug),
                 neutral_path: neutral_path(&name),
                 expected,
                 contents,

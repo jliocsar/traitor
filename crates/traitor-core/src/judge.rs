@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use futures::{StreamExt, TryStreamExt, stream};
 use snafu::{OptionExt, Snafu};
 
-use crate::cache::VerdictCache;
 use crate::question::{Question, SnippetState};
+use crate::store::{JsonStore, hex_sha256};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::Verdict;
 
@@ -59,9 +59,28 @@ struct CachedQuestion<'repository> {
     verdict: Option<Verdict>,
 }
 
-pub(crate) async fn judge_through_cache<'repository, J: Judge>(
+pub(crate) async fn judge_through_cache<'repository, T, J: Judge>(
     judge: &J,
-    cache: &VerdictCache<'_>,
+    store: &JsonStore,
+    items: Vec<T>,
+    request: impl Fn(&T) -> JudgeRequest<'_, 'repository>,
+) -> Result<Vec<(T, Vec<Judged<'repository>>)>, JudgingError> {
+    let judged = {
+        let requests: Vec<JudgeRequest> = items.iter().map(request).collect();
+        judge_requests(judge, store, &requests).await?
+    };
+    Ok(items.into_iter().zip(judged).collect())
+}
+
+fn cache_key(model: &str, question: &Question, state: &SnippetState) -> String {
+    let material = serde_json::to_vec(&(model, question, state))
+        .expect("a question and a snippet always serialize");
+    hex_sha256(&material)
+}
+
+async fn judge_requests<'repository, J: Judge>(
+    judge: &J,
+    store: &JsonStore,
     requests: &[JudgeRequest<'_, 'repository>],
 ) -> Result<Vec<Vec<Judged<'repository>>>, JudgingError> {
     let cached: Vec<Vec<CachedQuestion>> = requests
@@ -71,14 +90,11 @@ pub(crate) async fn judge_through_cache<'repository, J: Judge>(
                 .traits
                 .iter()
                 .map(|definition| {
-                    let key = VerdictCache::key(
-                        judge.model(),
-                        &Question::about(definition),
-                        &request.state,
-                    );
+                    let key =
+                        cache_key(judge.model(), &Question::about(definition), &request.state);
                     CachedQuestion {
                         definition,
-                        verdict: cache.read(&key),
+                        verdict: store.read(&key),
                         key,
                     }
                 })
@@ -137,7 +153,7 @@ pub(crate) async fn judge_through_cache<'repository, J: Judge>(
                         .context(MissingVerdictSnafu {
                             slug: &question.definition.slug,
                         })?;
-                    cache.write(&question.key, &verdict);
+                    store.write_best_effort(&question.key, &verdict);
                     Ok(Judged {
                         definition: question.definition,
                         verdict,
