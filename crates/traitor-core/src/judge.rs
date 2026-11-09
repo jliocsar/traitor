@@ -120,12 +120,16 @@ async fn judge_requests<'repository, J: Judge>(
             ))
         })
         .collect();
+    let asked = &cached;
     let mut answers: BTreeMap<usize, BTreeMap<String, Verdict>> = stream::iter(uncached)
         .map(|(index, request)| async move {
-            judge
-                .judge(&request)
-                .await
-                .map(|verdicts| (index, verdicts))
+            let verdicts = judge.judge(&request).await?;
+            for question in &asked[index] {
+                if let Some(verdict) = verdicts.get(&question.definition.slug) {
+                    store.write_best_effort(&question.key, verdict);
+                }
+            }
+            Ok::<_, J::Error>((index, verdicts))
         })
         .buffer_unordered(CONCURRENT_REQUESTS)
         .try_collect()
@@ -153,7 +157,6 @@ async fn judge_requests<'repository, J: Judge>(
                         .context(MissingVerdictSnafu {
                             slug: &question.definition.slug,
                         })?;
-                    store.write_best_effort(&question.key, &verdict);
                     Ok(Judged {
                         definition: question.definition,
                         verdict,

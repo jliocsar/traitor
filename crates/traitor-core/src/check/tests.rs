@@ -154,6 +154,18 @@ fn an_offline_judge_cannot_check() {
 }
 
 #[test]
+fn verdicts_that_came_back_are_kept_when_another_request_fails() {
+    let directory = repository("{}");
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let flaky = FakeJudge::offline_after(1);
+    assert!(block_on(check(&repository, None, &flaky, &cache_in(&cache))).is_err());
+    let judge = FakeJudge::new();
+    block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    assert_eq!(judge.calls.get(), 1);
+}
+
+#[test]
 fn a_range_reads_files_from_its_last_commit() {
     let directory = repository("{}");
     git(directory.path(), &["add", "-A"]);

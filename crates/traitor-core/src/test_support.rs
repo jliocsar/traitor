@@ -21,7 +21,7 @@ pub struct Offline;
 pub struct FakeJudge {
     pub calls: Cell<usize>,
     pub states: RefCell<Vec<Value>>,
-    offline: bool,
+    answers_before_offline: usize,
 }
 
 impl FakeJudge {
@@ -29,13 +29,17 @@ impl FakeJudge {
         Self {
             calls: Cell::new(0),
             states: RefCell::new(Vec::new()),
-            offline: false,
+            answers_before_offline: usize::MAX,
         }
     }
 
     pub fn offline() -> Self {
+        Self::offline_after(0)
+    }
+
+    pub fn offline_after(answers: usize) -> Self {
         Self {
-            offline: true,
+            answers_before_offline: answers,
             ..Self::new()
         }
     }
@@ -56,7 +60,7 @@ impl Judge for FakeJudge {
         self.states
             .borrow_mut()
             .push(serde_json::to_value(request.state).unwrap());
-        if self.offline {
+        if self.calls.get() > self.answers_before_offline {
             return Err(Offline);
         }
         let fails = request.state.snippet.contains("let ");
