@@ -111,7 +111,7 @@ function publish(outputDirectory) {
       console.log(`${name}@${version} is already on npm`)
       continue
     }
-    execFileSync('npm', ['publish', directory, '--access', 'public', '--provenance', '--tag', distributionTag], { stdio: 'inherit' })
+    execFileSync('npm', ['publish', directory, '--access', 'public', '--tag', distributionTag], { stdio: 'inherit' })
   }
 }
 
