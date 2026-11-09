@@ -77,15 +77,16 @@ fn print_case_report(report: &CaseReport) {
 }
 
 fn fail_probability_range(results: &[&CaseResult], expected: Answer) -> String {
-    let probabilities: Vec<f64> = results
+    let range = results
         .iter()
         .filter(|result| result.expected == expected)
         .map(|result| result.verdict.probabilities.fail)
-        .collect();
-    let lowest = probabilities.iter().copied().reduce(f64::min);
-    let highest = probabilities.iter().copied().reduce(f64::max);
-    match (lowest, highest) {
-        (Some(lowest), Some(highest)) => format!("{lowest:.2} to {highest:.2}"),
-        _ => "none".to_string(),
+        .fold(None, |range, fail| match range {
+            None => Some((fail, fail)),
+            Some((lowest, highest)) => Some((f64::min(lowest, fail), f64::max(highest, fail))),
+        });
+    match range {
+        Some((lowest, highest)) => format!("{lowest:.2} to {highest:.2}"),
+        None => "none".to_string(),
     }
 }
