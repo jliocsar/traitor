@@ -23,6 +23,7 @@ pub enum OpenError {
     UnknownTrait { slug: String },
 }
 
+#[derive(Debug)]
 pub struct ConfiguredRepository {
     git: Repository,
     config: Config,

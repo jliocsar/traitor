@@ -1,17 +1,11 @@
-use std::process::Command;
+use std::assert_matches;
 
 use super::*;
+use crate::test_support::git;
 
 fn repository() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
-    let status = Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(directory.path())
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .status()
-        .unwrap();
-    assert!(status.success());
+    git(directory.path(), &["init", "-q"]);
     directory
 }
 
@@ -100,20 +94,20 @@ fn refuses_a_config_newer_than_the_binary() {
         directory.path(),
         &format!("{{\"$schema\":\"{}\"}}", schema_url(&version("0.4.0"))),
     );
-    assert!(matches!(
+    assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::NewerThanBinary { .. })
-    ));
+    );
 }
 
 #[test]
 fn refuses_a_schema_that_isnt_traitors() {
     let directory = repository();
     write(directory.path(), "{\"$schema\":\"./schema.json\"}");
-    assert!(matches!(
+    assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::UnrecognizedSchema { .. })
-    ));
+    );
 }
 
 #[test]
@@ -124,11 +118,11 @@ fn refuses_to_write_an_upgrade_that_wouldnt_load() {
         schema_url(&version("0.2.0"))
     );
     write(directory.path(), &contents);
-    assert!(matches!(
+    assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::Config {
             source: ConfigError::ThresholdOutOfRange { .. }
         })
-    ));
+    );
     assert_eq!(read(directory.path()), contents);
 }

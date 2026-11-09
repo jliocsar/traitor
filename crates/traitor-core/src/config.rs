@@ -99,10 +99,12 @@ struct ExemptionFile {
     reason: String,
 }
 
+#[derive(Debug)]
 pub(crate) struct Config {
     traits: BTreeMap<String, TraitPolicy>,
 }
 
+#[derive(Debug)]
 struct TraitPolicy {
     threshold: Option<f64>,
     exempt: GlobSet,

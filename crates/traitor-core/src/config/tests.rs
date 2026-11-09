@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::fs;
 
 use super::*;
@@ -32,8 +33,8 @@ fn committed_schema_is_current() {
 #[test]
 fn rejects_a_blank_reason() {
     let contents = br#"{"traits":{"x":{"exempt":[{"paths":["a/**"],"reason":" "}]}}}"#;
-    assert!(matches!(
+    assert_matches!(
         Config::parse(Path::new(CONFIG_PATH), contents),
         Err(ConfigError::MissingReason { .. })
-    ));
+    );
 }

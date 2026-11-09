@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::fs;
 
 use futures::executor::block_on;
@@ -108,8 +109,8 @@ fn a_trait_without_cases_is_named() {
 fn an_unknown_trait_is_refused() {
     let directory = repository_with_trait("{}");
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         run(&repository, &["nope".to_string()], &FakeJudge::new()),
         Err(CaseError::UnknownTrait { .. })
-    ));
+    );
 }

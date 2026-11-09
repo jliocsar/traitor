@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::fs;
 use std::path::Path;
 
@@ -103,21 +104,21 @@ fn an_exempt_path_is_never_asked_about() {
 fn a_repo_without_a_config_cannot_be_opened() {
     let directory = repository("{}");
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
-    assert!(matches!(
+    assert_matches!(
         ConfiguredRepository::open(directory.path()),
         Err(OpenError::Config {
             source: ConfigError::MissingConfig { .. }
         })
-    ));
+    );
 }
 
 #[test]
 fn a_config_for_a_trait_that_doesnt_exist_cannot_be_opened() {
     let directory = repository(r#"{ "traits": { "nope": { "threshold": 0.5 } } }"#);
-    assert!(matches!(
+    assert_matches!(
         ConfiguredRepository::open(directory.path()),
         Err(OpenError::UnknownTrait { .. })
-    ));
+    );
 }
 
 #[test]
@@ -127,12 +128,12 @@ fn an_offline_judge_cannot_check() {
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::offline();
     let result = block_on(check(&repository, None, &judge, &cache_in(&cache)));
-    assert!(matches!(
+    assert_matches!(
         result,
         Err(CheckError::Judging {
             source: JudgingError::Judge { .. }
         })
-    ));
+    );
 }
 
 #[test]
