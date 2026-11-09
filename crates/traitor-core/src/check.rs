@@ -37,6 +37,7 @@ pub struct Finding {
     pub trait_slug: String,
     pub trait_title: String,
     pub why: String,
+    pub expect: String,
     pub verdict: Verdict,
     pub fails_check: bool,
     pub from_cache: bool,
@@ -147,6 +148,7 @@ pub async fn check<J: Judge>(
                         trait_slug: definition.slug.clone(),
                         trait_title: definition.title.clone(),
                         why: definition.why.clone(),
+                        expect: definition.expect.clone(),
                         fails_check: config.threshold(&definition.slug).is_some_and(|threshold| {
                             judged.verdict.probabilities.fail >= threshold
                         }),

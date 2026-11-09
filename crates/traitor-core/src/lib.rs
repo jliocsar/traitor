@@ -7,6 +7,7 @@ pub mod git;
 pub mod init;
 pub mod judge;
 pub mod question;
+pub mod stop_hook;
 pub mod token;
 pub mod trait_definition;
 pub mod verdict;

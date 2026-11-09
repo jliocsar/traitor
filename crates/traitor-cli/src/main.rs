@@ -1,9 +1,10 @@
+mod stop_hook_command;
 mod test_command;
 
 use std::path::Path;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use semver::Version;
 use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::cache::VerdictCache;
@@ -12,6 +13,7 @@ use traitor_core::config::CONFIG_PATH;
 use traitor_core::init::{InitOutcome, init};
 use traitor_core::verdict::Answer;
 
+use crate::stop_hook_command::run_stop_hook;
 use crate::test_command::run_test;
 
 const EXIT_TRAIT_BROKEN: u8 = 1;
@@ -24,6 +26,12 @@ struct Arguments {
     command: Command,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Text,
+    ClaudeCodeHook,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Set traitor up in this repo, or upgrade its config to this traitor's version. Setting up is how a repo agrees to send its code to TypeSafe.
@@ -32,6 +40,9 @@ enum Command {
     Check {
         /// What to judge, as `git diff` reads it: nothing for everything unpushed, a ref for everything since it, or A..B for what changed between two commits.
         revision: Option<String>,
+        /// How to report: text for people and CI, or claude-code-hook for the JSON a Claude Code Stop hook reads on stdin and prints.
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
     },
     /// Judge each trait's cases, the files in its pass/ and fail/ folders, and report any that get a different verdict.
     Test {
@@ -43,7 +54,14 @@ enum Command {
 fn main() -> ExitCode {
     match Arguments::parse().command {
         Command::Init => run_init(),
-        Command::Check { revision } => run_check(revision.as_deref()),
+        Command::Check {
+            revision,
+            format: Format::Text,
+        } => run_check(revision.as_deref()),
+        Command::Check {
+            revision,
+            format: Format::ClaudeCodeHook,
+        } => run_stop_hook(revision.as_deref()),
         Command::Test { traits } => run_test(&traits),
     }
 }
@@ -92,12 +110,19 @@ fn run_in_current_directory<T, E: std::fmt::Display>(
     run: impl AsyncFnOnce(&Path) -> Result<T, E>,
 ) -> Result<T, String> {
     let directory = std::env::current_dir().map_err(|error| error.to_string())?;
+    run_in(&directory, run)
+}
+
+fn run_in<T, E: std::fmt::Display>(
+    directory: &Path,
+    run: impl AsyncFnOnce(&Path) -> Result<T, E>,
+) -> Result<T, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?;
     runtime
-        .block_on(run(&directory))
+        .block_on(run(directory))
         .map_err(|error| error.to_string())
 }
 
