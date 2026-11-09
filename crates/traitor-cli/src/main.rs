@@ -11,6 +11,7 @@ use traitor_core::cache::VerdictCache;
 use traitor_core::check::{Finding, Report, check};
 use traitor_core::config::CONFIG_PATH;
 use traitor_core::init::{InitOutcome, init};
+use traitor_core::store::JsonStore;
 use traitor_core::verdict::Answer;
 
 use crate::stop_hook_command::run_stop_hook;
@@ -128,7 +129,7 @@ fn run_in<T, E: std::fmt::Display>(
 
 fn run_check(revision: Option<&str>) -> ExitCode {
     let judge = TypeSafeJudge::from_environment();
-    let cache = VerdictCache::in_user_cache_directory();
+    let cache = VerdictCache::new(&JsonStore::in_user_cache_directory());
     let outcome = run_in_current_directory(async |directory: &Path| {
         check(directory, revision, &judge, &cache).await
     });

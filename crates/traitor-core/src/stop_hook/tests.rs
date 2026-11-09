@@ -110,9 +110,9 @@ fn unsure_snippets_ride_along_with_a_block() {
 #[test]
 fn blocked_fails_persist_per_session() {
     let directory = TempDir::new().unwrap();
-    let store = BlockedFails::at(directory.path().to_path_buf());
+    let store = BlockedFails::new(&JsonStore::at(directory.path().to_path_buf()));
     let fails = BTreeSet::from(["one".to_string()]);
-    store.write("session/../odd", &fails).unwrap();
+    store.write("session/../odd", &fails);
     assert_eq!(store.read("session/../odd"), fails);
     assert!(store.read("another").is_empty());
 }

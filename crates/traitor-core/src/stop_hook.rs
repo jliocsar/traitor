@@ -1,14 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::fs;
-use std::io;
 use std::path::PathBuf;
-use std::process;
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::check::{Finding, Report};
+use crate::store::{JsonStore, hex_sha256};
 use crate::verdict::Answer;
 
 const BLOCK: &str = "block";
@@ -45,43 +42,25 @@ impl StopHookOutput {
 }
 
 pub struct BlockedFails {
-    directory: Option<PathBuf>,
+    store: JsonStore,
 }
 
 impl BlockedFails {
-    pub fn in_user_cache_directory() -> Self {
+    pub fn new(store: &JsonStore) -> Self {
         Self {
-            directory: dirs::cache_dir()
-                .map(|cache| cache.join("traitor").join("v1").join("stop-hook")),
-        }
-    }
-
-    pub fn at(directory: PathBuf) -> Self {
-        Self {
-            directory: Some(directory),
+            store: store.subdirectory("stop-hook"),
         }
     }
 
     pub fn read(&self, session_id: &str) -> BTreeSet<String> {
-        self.path(session_id)
-            .and_then(|path| fs::read(path).ok())
-            .and_then(|contents| serde_json::from_slice(&contents).ok())
+        self.store
+            .read(&hex_sha256(session_id.as_bytes()))
             .unwrap_or_default()
     }
 
-    pub fn write(&self, session_id: &str, fails: &BTreeSet<String>) -> io::Result<()> {
-        let (Some(directory), Some(path)) = (&self.directory, self.path(session_id)) else {
-            return Ok(());
-        };
-        fs::create_dir_all(directory)?;
-        let temporary = path.with_extension(format!("json.{}.tmp", process::id()));
-        fs::write(&temporary, serde_json::to_vec(fails)?)?;
-        fs::rename(&temporary, path)
-    }
-
-    fn path(&self, session_id: &str) -> Option<PathBuf> {
-        let name = hex_digest(session_id.as_bytes());
-        Some(self.directory.as_ref()?.join(format!("{name}.json")))
+    pub fn write(&self, session_id: &str, fails: &BTreeSet<String>) {
+        self.store
+            .write_best_effort(&hex_sha256(session_id.as_bytes()), fails);
     }
 }
 
@@ -121,14 +100,7 @@ pub fn respond(
 fn identity(finding: &Finding) -> String {
     let material = serde_json::to_vec(&(&finding.trait_slug, &finding.path, &finding.snippet.text))
         .expect("strings always serialize");
-    hex_digest(&material)
-}
-
-fn hex_digest(material: &[u8]) -> String {
-    Sha256::digest(material)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_sha256(&material)
 }
 
 fn location(finding: &Finding) -> String {

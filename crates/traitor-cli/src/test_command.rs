@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::cache::VerdictCache;
 use traitor_core::case::{CaseReport, CaseResult, test_cases};
+use traitor_core::store::JsonStore;
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 use traitor_core::verdict::Answer;
 
@@ -12,7 +13,7 @@ use crate::{EXIT_COULD_NOT_RUN, EXIT_TRAIT_BROKEN, run_in_current_directory};
 
 pub fn run_test(traits: &[String]) -> ExitCode {
     let judge = TypeSafeJudge::from_environment();
-    let cache = VerdictCache::in_user_cache_directory();
+    let cache = VerdictCache::new(&JsonStore::in_user_cache_directory());
     let outcome = run_in_current_directory(async |directory: &Path| {
         test_cases(directory, traits, &judge, &cache).await
     });

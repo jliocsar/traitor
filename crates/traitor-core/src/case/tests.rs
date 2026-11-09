@@ -4,6 +4,7 @@ use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
+use crate::store::JsonStore;
 use crate::test_support::{FakeJudge, repository_with_trait, verdict};
 
 const CASES: &str = ".agents/traits/railway-not-guards";
@@ -20,7 +21,7 @@ fn run(root: &Path, slugs: &[String], judge: &FakeJudge) -> Result<CaseReport, C
         root,
         slugs,
         judge,
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ))
 }
 

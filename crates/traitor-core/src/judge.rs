@@ -119,7 +119,7 @@ pub async fn judge_through_cache<J: Judge>(
                                 .and_then(|verdicts| verdicts.get(slug))
                                 .cloned()
                                 .context(MissingVerdictSnafu { slug })?;
-                            let _ = cache.write(&question.key, &verdict);
+                            cache.write(&question.key, &verdict);
                             Judged {
                                 verdict,
                                 from_cache: false,

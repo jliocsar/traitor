@@ -7,6 +7,7 @@ use traitor_core::cache::VerdictCache;
 use traitor_core::check::check;
 use traitor_core::git::Repository;
 use traitor_core::stop_hook::{BlockedFails, StopHookInput, StopHookOutput, respond};
+use traitor_core::store::JsonStore;
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 
 use crate::run_in;
@@ -40,15 +41,15 @@ fn respond_to_stop(input: StopHookInput, revision: Option<&str>) -> StopHookOutp
         return StopHookOutput::default();
     }
     let judge = TypeSafeJudge::from_environment();
-    let cache = VerdictCache::in_user_cache_directory();
+    let cache = VerdictCache::new(&JsonStore::in_user_cache_directory());
     match run_in(&directory, async |directory| {
         check(directory, revision, &judge, &cache).await
     }) {
         Ok(report) => {
-            let blocked_fails = BlockedFails::in_user_cache_directory();
+            let blocked_fails = BlockedFails::new(&JsonStore::in_user_cache_directory());
             let session_id = input.session_id.unwrap_or_default();
             let (output, now_failing) = respond(&report, &blocked_fails.read(&session_id));
-            let _ = blocked_fails.write(&session_id, &now_failing);
+            blocked_fails.write(&session_id, &now_failing);
             output
         }
         Err(message) => StopHookOutput::could_not_check(&message),

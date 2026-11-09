@@ -5,6 +5,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::judge::JudgingError;
+use crate::store::JsonStore;
 use crate::test_support::{FakeJudge, git, repository_with_trait};
 use crate::verdict::Answer;
 
@@ -26,7 +27,7 @@ fn judges_each_changed_unit_and_fails_over_the_threshold() {
         directory.path(),
         None,
         &judge,
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ))
     .unwrap();
     assert_eq!(report.snippet_count, 2);
@@ -49,7 +50,7 @@ fn judges_each_changed_unit_and_fails_over_the_threshold() {
 #[test]
 fn a_second_run_reads_every_verdict_from_the_cache() {
     let directory = repository("{}");
-    let cache = VerdictCache::at(TempDir::new().unwrap().keep());
+    let cache = VerdictCache::new(&JsonStore::at(TempDir::new().unwrap().keep()));
     let judge = FakeJudge::new();
     block_on(check(directory.path(), None, &judge, &cache)).unwrap();
     let report = block_on(check(directory.path(), None, &judge, &cache)).unwrap();
@@ -65,7 +66,7 @@ fn without_a_threshold_a_fail_is_only_reported() {
         directory.path(),
         None,
         &FakeJudge::new(),
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ))
     .unwrap();
     assert!(
@@ -88,7 +89,7 @@ fn an_exempt_path_is_never_asked_about() {
         directory.path(),
         None,
         &judge,
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ))
     .unwrap();
     assert_eq!(judge.calls.get(), 0);
@@ -104,7 +105,7 @@ fn a_repo_without_a_config_cannot_be_checked() {
         directory.path(),
         None,
         &FakeJudge::new(),
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ));
     assert!(matches!(
         result,
@@ -123,7 +124,7 @@ fn an_offline_judge_cannot_check() {
         directory.path(),
         None,
         &judge,
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ));
     assert!(matches!(
         result,
@@ -148,7 +149,7 @@ fn a_range_reads_files_from_its_last_commit() {
         directory.path(),
         Some("HEAD~..HEAD"),
         &FakeJudge::new(),
-        &VerdictCache::at(cache.path().to_path_buf()),
+        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
     ))
     .unwrap();
     assert_eq!(report.snippet_count, 2);
