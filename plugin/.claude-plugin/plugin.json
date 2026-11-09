@@ -4,5 +4,6 @@
   "author": {
     "name": "JC"
   },
-  "repository": "https://github.com/jliocsar/traitor"
+  "repository": "https://github.com/jliocsar/traitor",
+  "license": "MIT"
 }
