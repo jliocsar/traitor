@@ -25,17 +25,23 @@ pub(crate) struct LineRange {
     pub(crate) last: usize,
 }
 
-impl LineRange {
-    pub(crate) const WHOLE_FILE: Self = Self {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Change {
+    Added(LineRange),
+    Deleted { after: usize },
+}
+
+impl Change {
+    pub(crate) const WHOLE_FILE: Self = Self::Added(LineRange {
         first: 1,
         last: usize::MAX,
-    };
+    });
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ChangedFile {
     pub(crate) path: String,
-    pub(crate) changes: Vec<LineRange>,
+    pub(crate) changes: Vec<Change>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +157,7 @@ impl Repository {
             .filter(|path| !path.is_empty())
             .map(|path| ChangedFile {
                 path: path.to_string(),
-                changes: vec![LineRange::WHOLE_FILE],
+                changes: vec![Change::WHOLE_FILE],
             })
             .collect())
     }
@@ -263,22 +269,19 @@ fn unquote(quoted: &str) -> Option<String> {
     Some(text_from_bytes(bytes))
 }
 
-fn parse_hunk_header(header: &str) -> Option<LineRange> {
+fn parse_hunk_header(header: &str) -> Option<Change> {
     let added = header.split(' ').nth(1)?.strip_prefix('+')?;
     let (start, count): (usize, usize) = match added.split_once(',') {
         Some((start, count)) => (start.parse().ok()?, count.parse().ok()?),
         None => (added.parse().ok()?, 1),
     };
-    match count {
-        0 => Some(LineRange {
-            first: start.max(1),
-            last: start + 1,
-        }),
-        _ => Some(LineRange {
+    Some(match count {
+        0 => Change::Deleted { after: start },
+        _ => Change::Added(LineRange {
             first: start,
             last: start + count - 1,
         }),
-    }
+    })
 }
 
 #[cfg(test)]

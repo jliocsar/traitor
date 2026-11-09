@@ -32,8 +32,8 @@ export const toTitle = (name: string) =>
 
 const GUIDE: &str = "# Guide\n\nIntro.\n\n## First\n\nPara one.\n\n## Second\n\nPara two.\n";
 
-fn lines(first: usize, last: usize) -> LineRange {
-    LineRange { first, last }
+fn lines(first: usize, last: usize) -> Change {
+    Change::Added(LineRange { first, last })
 }
 
 fn render(snippets: &[Snippet]) -> String {
@@ -135,7 +135,7 @@ fn a_whole_new_file_is_every_top_level_unit() {
     insta::assert_snapshot!(render(&snippets_for_changes(
         "src/module.ts",
         MODULE,
-        &[LineRange::WHOLE_FILE]
+        &[Change::WHOLE_FILE]
     )));
 }
 
@@ -172,7 +172,7 @@ fn a_unit_that_does_not_parse_falls_back_to_a_line_window() {
 fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
     let broken = "function broken( {\n  return 1\n}\n";
     let source = format!("{MODULE}\n{broken}\n{MODULE}");
-    let snippets = snippets_for_changes("src/module.ts", &source, &[LineRange::WHOLE_FILE]);
+    let snippets = snippets_for_changes("src/module.ts", &source, &[Change::WHOLE_FILE]);
     assert!(snippets.len() > 3);
     assert!(
         snippets
@@ -184,7 +184,7 @@ fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
 #[test]
 fn a_long_new_file_in_an_unknown_language_is_cut_to_the_budget() {
     let source: String = (1..=2000).map(|line| format!("line {line}\n")).collect();
-    let snippets = snippets_for_changes("src/main.rs", &source, &[LineRange::WHOLE_FILE]);
+    let snippets = snippets_for_changes("src/main.rs", &source, &[Change::WHOLE_FILE]);
     assert!(snippets.len() > 1);
     assert!(
         snippets
@@ -203,7 +203,7 @@ fn a_long_new_file_in_an_unknown_language_is_cut_to_the_budget() {
 #[test]
 fn an_empty_new_file_selects_nothing() {
     assert_eq!(
-        snippets_for_changes("src/__init__.py", "", &[LineRange::WHOLE_FILE]),
+        snippets_for_changes("src/__init__.py", "", &[Change::WHOLE_FILE]),
         Vec::new()
     );
 }
@@ -247,10 +247,35 @@ fn leading_context_gives_way_to_the_budget() {
 fn a_window_stops_at_a_unit_that_was_placed() {
     let broken = "function broken( {\n  return 1\n}\n";
     let source = format!("{MODULE}\n{broken}\n{MODULE}");
-    let snippets = snippets_for_changes("src/module.ts", &source, &[LineRange::WHOLE_FILE]);
+    let snippets = snippets_for_changes("src/module.ts", &source, &[Change::WHOLE_FILE]);
     assert!(
         snippets
             .windows(2)
             .all(|pair| pair[0].last_line < pair[1].first_line)
+    );
+}
+
+#[test]
+fn a_deletion_between_blank_lines_reaches_the_nearest_code_on_each_side() {
+    let source = "def a():\n    pass\n\n\n\n\ndef b():\n    pass\n";
+    let snippets = snippets_for_changes("m.py", source, &[Change::Deleted { after: 4 }]);
+    assert_eq!(
+        snippets
+            .iter()
+            .map(|snippet| (snippet.first_line, snippet.last_line))
+            .collect::<Vec<_>>(),
+        vec![(1, 8)]
+    );
+}
+
+#[test]
+fn a_window_on_a_units_last_line_does_not_repeat_the_unit() {
+    let body: String = (1..=25).map(|index| format!("  x{index}()\n")).collect();
+    let source = format!("function a() {{\n{body}}}; foo()\n");
+    let snippets = snippets_for_changes("src/a.ts", &source, &[lines(2, 2), lines(27, 27)]);
+    assert!(
+        snippets
+            .windows(2)
+            .all(|pair| pair[0].last_line <= pair[1].first_line)
     );
 }

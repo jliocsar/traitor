@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser, Tree};
 
-use crate::git::LineRange;
+use crate::git::{Change, LineRange};
 
 const BUDGET_TOKENS: usize = 1000;
 const BYTES_PER_TOKEN: usize = 3;
@@ -100,11 +100,7 @@ pub(crate) fn language_name(path: &str) -> &str {
         .unwrap_or("text")
 }
 
-pub(crate) fn snippets_for_changes(
-    path: &str,
-    source: &str,
-    changes: &[LineRange],
-) -> Vec<Snippet> {
+pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change]) -> Vec<Snippet> {
     let lines = Lines::new(source);
     let parsed = Language::from_path(path)
         .and_then(|language| language.parse(source).map(|tree| (language, tree)));
@@ -257,17 +253,31 @@ impl<'source> Lines<'source> {
         (start, end)
     }
 
-    fn content_ranges(&self, change: LineRange) -> impl Iterator<Item = (usize, usize, usize)> {
-        self.clamp(change)
-            .into_iter()
-            .flat_map(|(first, last)| first..=last)
-            .filter_map(|line| {
-                let (start, end) = self.byte_range(line);
-                let text = &self.source[start..end];
-                let leading = text.len() - text.trim_start().len();
-                let trailing = text.len() - text.trim_end().len();
-                (leading < text.len()).then_some((line, start + leading, end - trailing))
-            })
+    fn content_ranges(&self, change: Change) -> Vec<(usize, usize, usize)> {
+        match change {
+            Change::Added(range) => self
+                .clamp(range)
+                .into_iter()
+                .flat_map(|(first, last)| first..=last)
+                .filter_map(|line| self.content_range(line))
+                .collect(),
+            Change::Deleted { after } => {
+                let line_count = self.starts.len();
+                let before = (1..=after.min(line_count))
+                    .rev()
+                    .find_map(|line| self.content_range(line));
+                let following = (after + 1..=line_count).find_map(|line| self.content_range(line));
+                before.into_iter().chain(following).collect()
+            }
+        }
+    }
+
+    fn content_range(&self, line: usize) -> Option<(usize, usize, usize)> {
+        let (start, end) = self.byte_range(line);
+        let text = &self.source[start..end];
+        let leading = text.len() - text.trim_start().len();
+        let trailing = text.len() - text.trim_end().len();
+        (leading < text.len()).then_some((line, start + leading, end - trailing))
     }
 
     fn windows(&self, mut changed: Vec<usize>, placed: &[Selection]) -> Vec<Selection> {
@@ -293,8 +303,8 @@ impl<'source> Lines<'source> {
         while let Some(&line) = rest.first() {
             let floor = taken
                 .iter()
-                .map(|(_, last)| *last)
-                .filter(|last| *last < line)
+                .filter(|(first, _)| *first < line)
+                .map(|(_, last)| (*last).min(line - 1))
                 .fold(previous_last, usize::max)
                 + 1;
             let mut first = line.saturating_sub(LINE_WINDOW).max(floor);

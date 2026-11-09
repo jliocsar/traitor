@@ -8,8 +8,8 @@ fn a_changed_line_that_looks_like_a_file_header_stays_in_its_hunk() {
         vec![ChangedFile {
             path: "query.sql".to_string(),
             changes: vec![
-                LineRange { first: 1, last: 1 },
-                LineRange { first: 5, last: 5 },
+                Change::Added(LineRange { first: 1, last: 1 }),
+                Change::Added(LineRange { first: 5, last: 5 }),
             ],
         }]
     );
@@ -23,15 +23,12 @@ fn reads_added_ranges_from_a_zero_context_diff() {
         vec![ChangedFile {
             path: "src/a.ts".to_string(),
             changes: vec![
-                LineRange { first: 3, last: 4 },
-                LineRange {
-                    first: 11,
-                    last: 12
-                },
-                LineRange {
+                Change::Added(LineRange { first: 3, last: 4 }),
+                Change::Deleted { after: 11 },
+                Change::Added(LineRange {
                     first: 20,
                     last: 20
-                },
+                }),
             ],
         }]
     );
@@ -44,7 +41,7 @@ fn a_quoted_path_is_unquoted() {
         parse_diff(diff),
         vec![ChangedFile {
             path: "we\"ird\u{e9}.ts".to_string(),
-            changes: vec![LineRange { first: 1, last: 1 }],
+            changes: vec![Change::Added(LineRange { first: 1, last: 1 })],
         }]
     );
 }
@@ -56,7 +53,7 @@ fn hunks_under_a_header_it_cannot_read_stay_off_the_previous_file() {
         parse_diff(diff),
         vec![ChangedFile {
             path: "a.ts".to_string(),
-            changes: vec![LineRange { first: 1, last: 1 }],
+            changes: vec![Change::Added(LineRange { first: 1, last: 1 })],
         }]
     );
 }
@@ -80,10 +77,10 @@ fn the_tab_git_adds_after_a_path_with_a_space_is_not_part_of_it() {
 }
 
 #[test]
-fn a_deletion_covers_the_lines_on_both_sides_of_it() {
+fn a_pure_deletion_is_read_as_a_deletion_after_its_line() {
     let diff = "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n@@ -3,3 +2,0 @@\n-def guard(x):\n-    assert x\n-\n";
     assert_eq!(
         parse_diff(diff)[0].changes,
-        vec![LineRange { first: 2, last: 3 }]
+        vec![Change::Deleted { after: 2 }]
     );
 }
