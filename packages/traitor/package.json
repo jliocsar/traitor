@@ -1,0 +1,16 @@
+{
+  "name": "@jliocsar/traitor",
+  "version": "0.0.0",
+  "description": "Checks changed code and docs against a repo's traits.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jliocsar/traitor.git",
+    "directory": "packages/traitor"
+  },
+  "bin": {
+    "traitor": "bin/traitor.js"
+  },
+  "files": ["bin"],
+  "type": "module"
+}
