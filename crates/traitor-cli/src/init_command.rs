@@ -8,8 +8,7 @@ use crate::{CommandResult, Outcome};
 
 pub fn run() -> CommandResult {
     let version = Version::parse(env!("CARGO_PKG_VERSION"))?;
-    let initialized = init(&env::current_dir()?, &version)?;
-    match initialized.outcome {
+    match init(&env::current_dir()?, &version)? {
         InitOutcome::Created => {
             println!("Wrote {CONFIG_PATH}.");
             println!();

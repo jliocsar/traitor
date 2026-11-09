@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
-use crate::cache::VerdictCache;
 use crate::check::{CheckError, Finding, Report, check};
 use crate::configured_repository::{ConfiguredRepository, OpenError};
 use crate::git::Repository;
@@ -43,10 +42,6 @@ impl StopHookOutput {
             ..Self::default()
         }
     }
-
-    pub fn blocks(&self) -> bool {
-        self.decision.is_some()
-    }
 }
 
 #[derive(Debug, Snafu)]
@@ -83,7 +78,7 @@ async fn check_for_stop<J: Judge>(
     store: &JsonStore,
 ) -> Result<StopHookOutput, StopCheckError> {
     let repository = ConfiguredRepository::load(git)?;
-    let report = check(&repository, revision, judge, &VerdictCache::new(store)).await?;
+    let report = check(&repository, revision, judge, store).await?;
     let blocked_fails = BlockedFails::new(store);
     let (output, now_failing) = respond(&report, &blocked_fails.read(session_id));
     blocked_fails.write(session_id, &now_failing);

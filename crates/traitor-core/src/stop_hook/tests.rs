@@ -41,7 +41,7 @@ fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
         &report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]),
         &BTreeSet::new(),
     );
-    assert!(output.blocks());
+    assert_eq!(output.decision, Some(Decision::Block));
     let reason = output.reason.unwrap();
     assert!(reason.contains("Railway, not guards (railway-not-guards)\n"));
     assert!(
@@ -58,7 +58,7 @@ fn the_same_fails_block_only_once() {
     let failing = report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]);
     let (_, blocked) = respond(&failing, &BTreeSet::new());
     let (output, _) = respond(&failing, &blocked);
-    assert!(!output.blocks());
+    assert_eq!(output.decision, None);
     assert!(output.system_message.unwrap().contains("src/a.ts:1-3"));
 }
 
@@ -72,7 +72,7 @@ fn a_changed_fail_blocks_again() {
         &report(vec![finding("src/a.ts", "let a = 2", verdict(true), true)]),
         &blocked,
     );
-    assert!(output.blocks());
+    assert_eq!(output.decision, Some(Decision::Block));
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn fixing_one_of_two_fails_does_not_block_again() {
         &report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]),
         &blocked,
     );
-    assert!(!output.blocks());
+    assert_eq!(output.decision, None);
 }
 
 #[test]
@@ -160,8 +160,11 @@ fn a_stop_blocks_on_new_fails_once_then_lets_the_agent_stop() {
     fs::write(directory.path().join("src/module.ts"), "let label = ''\n").unwrap();
     let cache = TempDir::new().unwrap();
     let store = JsonStore::at(cache.path().to_path_buf());
-    assert!(stop(directory.path(), &store).blocks());
-    assert!(!stop(directory.path(), &store).blocks());
+    assert_eq!(
+        stop(directory.path(), &store).decision,
+        Some(Decision::Block)
+    );
+    assert_eq!(stop(directory.path(), &store).decision, None);
 }
 
 #[test]
@@ -181,7 +184,7 @@ fn a_repo_with_traits_but_no_config_says_why_it_couldnt_check() {
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
     let cache = TempDir::new().unwrap();
     let output = stop(directory.path(), &JsonStore::at(cache.path().to_path_buf()));
-    assert!(!output.blocks());
+    assert_eq!(output.decision, None);
     assert!(
         output
             .system_message

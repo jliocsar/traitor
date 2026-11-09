@@ -5,13 +5,18 @@ use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
 use schemars::JsonSchema;
+use semver::Version;
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use snafu::{ResultExt, Snafu, ensure};
 
-use crate::trait_definition::{TraitDefinitionError, compile_globs};
+use crate::glob::{GlobError, compile_globs};
 use crate::verdict::Verdict;
 
 pub const CONFIG_PATH: &str = ".agents/traitor.json";
+pub(crate) const SCHEMA_KEY: &str = "$schema";
+const SCHEMA_URL_PREFIX: &str = "https://raw.githubusercontent.com/jliocsar/traitor/v";
+const SCHEMA_URL_SUFFIX: &str = "/schema/traitor.schema.json";
 
 #[derive(Debug, Snafu)]
 pub enum ConfigError {
@@ -41,8 +46,8 @@ pub enum ConfigError {
     },
     #[snafu(display("{} exempts paths from traits.{slug} without a reason", path.display()))]
     MissingReason { path: PathBuf, slug: String },
-    #[snafu(display("{source}"))]
-    InvalidExemption { source: TraitDefinitionError },
+    #[snafu(transparent)]
+    InvalidExemption { source: GlobError },
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -148,6 +153,24 @@ impl Config {
     }
 }
 
+pub(crate) fn schema_url(version: &Version) -> String {
+    format!("{SCHEMA_URL_PREFIX}{version}{SCHEMA_URL_SUFFIX}")
+}
+
+pub(crate) fn version_in_schema_url(url: &str) -> Option<Version> {
+    let version = url
+        .strip_prefix(SCHEMA_URL_PREFIX)?
+        .strip_suffix(SCHEMA_URL_SUFFIX)?;
+    Version::parse(version).ok()
+}
+
+pub(crate) fn new_config_file(version: &Version) -> Map<String, Value> {
+    Map::from_iter([
+        (SCHEMA_KEY.to_string(), Value::String(schema_url(version))),
+        ("traits".to_string(), Value::Object(Map::new())),
+    ])
+}
+
 impl TraitPolicy {
     fn from_settings(
         path: &Path,
@@ -178,7 +201,7 @@ impl TraitPolicy {
             .collect();
         Ok(Self {
             threshold: settings.threshold,
-            exempt: compile_globs(path, &globs).context(InvalidExemptionSnafu)?,
+            exempt: compile_globs(path, &globs)?,
         })
     }
 }

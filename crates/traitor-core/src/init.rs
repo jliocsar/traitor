@@ -7,12 +7,11 @@ use semver::Version;
 use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu};
 
-use crate::config::{CONFIG_PATH, Config, ConfigError};
+use crate::config::{
+    CONFIG_PATH, Config, ConfigError, SCHEMA_KEY, new_config_file, schema_url,
+    version_in_schema_url,
+};
 use crate::git::{GitError, Repository};
-
-const SCHEMA_URL_PREFIX: &str = "https://raw.githubusercontent.com/jliocsar/traitor/v";
-const SCHEMA_URL_SUFFIX: &str = "/schema/traitor.schema.json";
-const SCHEMA_KEY: &str = "$schema";
 
 #[derive(Debug, Snafu)]
 pub enum InitError {
@@ -65,34 +64,17 @@ pub enum InitOutcome {
     AddedSchema,
 }
 
-pub struct Initialized {
-    pub path: PathBuf,
-    pub outcome: InitOutcome,
-}
-
-fn schema_url(version: &Version) -> String {
-    format!("{SCHEMA_URL_PREFIX}{version}{SCHEMA_URL_SUFFIX}")
-}
-
-pub fn init(directory: &Path, binary_version: &Version) -> Result<Initialized, InitError> {
+pub fn init(directory: &Path, binary_version: &Version) -> Result<InitOutcome, InitError> {
     let repository = Repository::discover(directory)?;
     let path = repository.root().join(CONFIG_PATH);
-    let outcome = match fs::read(&path) {
-        Ok(contents) => upgrade(&path, &contents, binary_version)?,
+    match fs::read(&path) {
+        Ok(contents) => upgrade(&path, &contents, binary_version),
         Err(source) if source.kind() == ErrorKind::NotFound => {
-            let config = Map::from_iter([
-                (
-                    SCHEMA_KEY.to_string(),
-                    Value::String(schema_url(binary_version)),
-                ),
-                ("traits".to_string(), Value::Object(Map::new())),
-            ]);
-            write_config(&path, &config)?;
-            InitOutcome::Created
+            write_config(&path, &new_config_file(binary_version))?;
+            Ok(InitOutcome::Created)
         }
-        Err(source) => return Err(InitError::ReadConfig { path, source }),
-    };
-    Ok(Initialized { path, outcome })
+        Err(source) => Err(InitError::ReadConfig { path, source }),
+    }
 }
 
 fn upgrade(
@@ -137,13 +119,6 @@ fn upgrade(
     config.shift_insert(0, SCHEMA_KEY.to_string(), Value::String(current_url));
     write_config(path, &config)?;
     Ok(outcome)
-}
-
-fn version_in_schema_url(url: &str) -> Option<Version> {
-    let version = url
-        .strip_prefix(SCHEMA_URL_PREFIX)?
-        .strip_suffix(SCHEMA_URL_SUFFIX)?;
-    Version::parse(version).ok()
 }
 
 fn write_config(path: &Path, config: &Map<String, Value>) -> Result<(), InitError> {

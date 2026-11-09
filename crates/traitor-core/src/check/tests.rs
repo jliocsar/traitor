@@ -25,8 +25,8 @@ fn open(directory: &Path) -> ConfiguredRepository {
     ConfiguredRepository::open(directory).unwrap()
 }
 
-fn cache_in(directory: &TempDir) -> VerdictCache {
-    VerdictCache::new(&JsonStore::at(directory.path().to_path_buf()))
+fn cache_in(directory: &TempDir) -> JsonStore {
+    JsonStore::at(directory.path().to_path_buf())
 }
 
 #[test]

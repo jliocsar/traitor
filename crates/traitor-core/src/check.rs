@@ -6,6 +6,7 @@ use crate::configured_repository::ConfiguredRepository;
 use crate::git::GitError;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
+use crate::store::JsonStore;
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::Verdict;
 
@@ -63,7 +64,7 @@ pub async fn check<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
     revision: Option<&str>,
     judge: &J,
-    cache: &VerdictCache,
+    store: &JsonStore,
 ) -> Result<Report<'repository>, CheckError> {
     let git = repository.git();
     let comparison = git.resolve_comparison(revision)?;
@@ -86,7 +87,7 @@ pub async fn check<'repository, J: Judge>(
     }
 
     let requests: Vec<JudgeRequest> = changed.iter().map(ChangedSnippet::request).collect();
-    let judged = judge_through_cache(judge, cache, &requests).await?;
+    let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
     let findings = changed
         .iter()
         .zip(judged)

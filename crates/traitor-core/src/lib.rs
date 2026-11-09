@@ -5,6 +5,7 @@ pub mod climb;
 pub mod config;
 pub mod configured_repository;
 pub mod git;
+pub mod glob;
 pub mod init;
 pub mod judge;
 pub mod question;

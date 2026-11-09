@@ -2,12 +2,12 @@ use crate::question::{Question, SnippetState};
 use crate::store::{JsonStore, hex_sha256};
 use crate::verdict::Verdict;
 
-pub struct VerdictCache {
+pub(crate) struct VerdictCache {
     store: JsonStore,
 }
 
 impl VerdictCache {
-    pub fn new(store: &JsonStore) -> Self {
+    pub(crate) fn new(store: &JsonStore) -> Self {
         Self {
             store: store.clone(),
         }

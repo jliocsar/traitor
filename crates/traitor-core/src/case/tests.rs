@@ -25,7 +25,7 @@ fn run<'repository>(
         repository,
         slugs,
         judge,
-        &VerdictCache::new(&JsonStore::at(cache.path().to_path_buf())),
+        &JsonStore::at(cache.path().to_path_buf()),
     ))
 }
 

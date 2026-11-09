@@ -2,9 +2,11 @@ use std::fs::{self, DirEntry};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use serde::Deserialize;
 use snafu::{OptionExt, ResultExt, Snafu};
+
+use crate::glob::{GlobError, compile_globs};
 
 pub const TRAITS_DIRECTORY: &str = ".agents/traits";
 const TRAIT_FILE: &str = "TRAIT.md";
@@ -29,12 +31,8 @@ pub enum TraitDefinitionError {
         #[snafu(source(from(serde_saphyr::Error, Box::new)))]
         source: Box<serde_saphyr::Error>,
     },
-    #[snafu(display("{} has an invalid glob in paths, {glob:?}: {source}", path.display()))]
-    InvalidGlob {
-        path: PathBuf,
-        glob: String,
-        source: globset::Error,
-    },
+    #[snafu(transparent)]
+    InvalidGlob { source: GlobError },
 }
 
 #[derive(Debug, Clone)]
@@ -101,28 +99,6 @@ pub(crate) fn visible_entries(directory: &Path) -> io::Result<Vec<DirEntry>> {
     entries.retain(|entry| !entry.file_name().to_string_lossy().starts_with('.'));
     entries.sort_by_key(DirEntry::file_name);
     Ok(entries)
-}
-
-pub(crate) fn compile_globs(
-    path: &Path,
-    globs: &[String],
-) -> Result<GlobSet, TraitDefinitionError> {
-    globs
-        .iter()
-        .try_fold(GlobSetBuilder::new(), |mut builder, glob| {
-            builder.add(
-                GlobBuilder::new(glob)
-                    .literal_separator(true)
-                    .build()
-                    .context(InvalidGlobSnafu { path, glob })?,
-            );
-            Ok(builder)
-        })?
-        .build()
-        .context(InvalidGlobSnafu {
-            path,
-            glob: globs.join(", "),
-        })
 }
 
 fn split_frontmatter(contents: &str) -> Option<&str> {

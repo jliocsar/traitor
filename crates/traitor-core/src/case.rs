@@ -8,6 +8,7 @@ use crate::climb::language_name;
 use crate::configured_repository::ConfiguredRepository;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
+use crate::store::JsonStore;
 use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition, visible_entries};
 use crate::verdict::{Answer, Verdict};
 
@@ -83,7 +84,7 @@ pub async fn test_cases<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
     slugs: &[String],
     judge: &J,
-    cache: &VerdictCache,
+    store: &JsonStore,
 ) -> Result<CaseReport<'repository>, CaseError> {
     if let Some(slug) = slugs
         .iter()
@@ -107,7 +108,7 @@ pub async fn test_cases<'repository, J: Judge>(
     }
 
     let requests: Vec<JudgeRequest> = cases.iter().map(Case::request).collect();
-    let judged = judge_through_cache(judge, cache, &requests).await?;
+    let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
     let results = cases
         .into_iter()
         .zip(judged.into_iter().flatten())

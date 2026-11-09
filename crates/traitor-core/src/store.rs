@@ -20,7 +20,8 @@ impl JsonStore {
         }
     }
 
-    pub fn at(directory: PathBuf) -> Self {
+    #[cfg(test)]
+    pub(crate) fn at(directory: PathBuf) -> Self {
         Self {
             directory: Some(directory),
         }

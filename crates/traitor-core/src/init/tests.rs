@@ -32,8 +32,8 @@ fn read(directory: &Path) -> String {
 #[test]
 fn creates_a_config_pinned_to_the_binary() {
     let directory = repository();
-    let initialized = init(directory.path(), &version("0.3.0")).unwrap();
-    assert_eq!(initialized.outcome, InitOutcome::Created);
+    let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+    assert_eq!(outcome, InitOutcome::Created);
     assert_eq!(
         read(directory.path()),
         "{\n  \"$schema\": \"https://raw.githubusercontent.com/jliocsar/traitor/v0.3.0/schema/traitor.schema.json\",\n  \"traits\": {}\n}\n"
@@ -59,9 +59,9 @@ fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
             schema_url(&version("0.2.1"))
         ),
     );
-    let initialized = init(directory.path(), &version("0.3.0")).unwrap();
+    let outcome = init(directory.path(), &version("0.3.0")).unwrap();
     assert_eq!(
-        initialized.outcome,
+        outcome,
         InitOutcome::Upgraded {
             from: version("0.2.1")
         }
@@ -75,8 +75,8 @@ fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
 fn adds_a_missing_schema_first() {
     let directory = repository();
     write(directory.path(), "{\"traits\":{}}");
-    let initialized = init(directory.path(), &version("0.3.0")).unwrap();
-    assert_eq!(initialized.outcome, InitOutcome::AddedSchema);
+    let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+    assert_eq!(outcome, InitOutcome::AddedSchema);
     assert!(read(directory.path()).starts_with("{\n  \"$schema\": "));
 }
 
@@ -88,8 +88,8 @@ fn leaves_a_current_config_untouched() {
         schema_url(&version("0.3.0"))
     );
     write(directory.path(), &contents);
-    let initialized = init(directory.path(), &version("0.3.0")).unwrap();
-    assert_eq!(initialized.outcome, InitOutcome::AlreadyCurrent);
+    let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+    assert_eq!(outcome, InitOutcome::AlreadyCurrent);
     assert_eq!(read(directory.path()), contents);
 }
 
