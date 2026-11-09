@@ -124,7 +124,7 @@ impl Repository {
         match &comparison.head {
             Some(head) => self.git(&["show", &format!("{head}:{path}")]),
             None => std::fs::read(self.root.join(path))
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map(text_from_bytes)
                 .context(ReadWorkingTreeSnafu { path }),
         }
     }
@@ -181,7 +181,12 @@ fn run_git(directory: &Path, arguments: &[&str]) -> Result<String, GitError> {
         }
         .fail();
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(text_from_bytes(output.stdout))
+}
+
+fn text_from_bytes(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
 }
 
 fn parse_diff(diff: &str) -> Vec<ChangedFile> {

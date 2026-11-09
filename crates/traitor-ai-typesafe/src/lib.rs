@@ -7,7 +7,8 @@ use traitor_core::judge::{Judge, JudgeRequest};
 use traitor_core::question::{Question, SnippetState};
 use traitor_core::verdict::{Answer, Probabilities, Verdict};
 
-const ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
+pub const API_HOST: &str = "api.typesafe.ai";
+const SYSTEM_ONE_PATH: &str = "/v1/systemone";
 const MODEL: &str = "jev-latest";
 const API_KEY_VARIABLE: &str = "TYPESAFE_API_KEY";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -83,12 +84,12 @@ impl Judge for TypeSafeJudge {
 
     async fn judge(
         &self,
-        request: &JudgeRequest<'_>,
+        request: &JudgeRequest<'_, '_>,
     ) -> Result<BTreeMap<String, Verdict>, TypeSafeError> {
         let api_key = self.api_key.as_deref().context(MissingApiKeySnafu)?;
         let response = self
             .client
-            .post(ENDPOINT)
+            .post(format!("https://{API_HOST}{SYSTEM_ONE_PATH}"))
             .bearer_auth(api_key)
             .json(&request_body(request))
             .send()
@@ -107,7 +108,9 @@ impl Judge for TypeSafeJudge {
     }
 }
 
-fn request_body<'request>(request: &'request JudgeRequest<'request>) -> SystemOneRequest<'request> {
+fn request_body<'request>(
+    request: &'request JudgeRequest<'request, 'request>,
+) -> SystemOneRequest<'request> {
     SystemOneRequest {
         model: MODEL,
         state: &request.state,
@@ -160,7 +163,7 @@ mod tests {
         .unwrap()
     }
 
-    fn request(definition: &TraitDefinition) -> JudgeRequest<'_> {
+    fn request(definition: &TraitDefinition) -> JudgeRequest<'_, '_> {
         JudgeRequest {
             state: SnippetState {
                 path: "src/module.ts",

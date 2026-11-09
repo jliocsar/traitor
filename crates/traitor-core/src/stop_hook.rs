@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
+use std::fmt::{Display, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -36,9 +36,9 @@ pub struct StopHookOutput {
 }
 
 impl StopHookOutput {
-    pub fn could_not_check(message: &str) -> Self {
+    pub fn could_not_check(error: impl Display) -> Self {
         Self {
-            system_message: Some(format!("traitor couldn't check: {message}")),
+            system_message: Some(format!("traitor couldn't check: {error}")),
             ..Self::default()
         }
     }
@@ -67,7 +67,7 @@ pub async fn respond_to_stop<J: Judge>(
     }
     check_for_stop(git, session_id, revision, judge, store)
         .await
-        .unwrap_or_else(|error| StopHookOutput::could_not_check(&error.to_string()))
+        .unwrap_or_else(StopHookOutput::could_not_check)
 }
 
 async fn check_for_stop<J: Judge>(
@@ -119,11 +119,6 @@ fn respond(
         .collect();
     let failing_identities: BTreeSet<String> =
         failing.iter().map(|finding| identity(finding)).collect();
-    let unsure: Vec<&Finding> = report
-        .findings
-        .iter()
-        .filter(|finding| finding.verdict.answer == Answer::Unsure)
-        .collect();
     let output = if failing.is_empty() {
         StopHookOutput::default()
     } else if failing_identities.is_subset(already_blocked) {
@@ -134,7 +129,7 @@ fn respond(
     } else {
         StopHookOutput {
             decision: Some(Decision::Block),
-            reason: Some(block_reason(&failing, &unsure)),
+            reason: Some(block_reason(&failing, report)),
             system_message: None,
         }
     };
@@ -151,14 +146,7 @@ fn identity(finding: &Finding) -> String {
     hex_sha256(&material)
 }
 
-fn location(finding: &Finding) -> String {
-    format!(
-        "{}:{}-{}",
-        finding.path, finding.snippet.first_line, finding.snippet.last_line
-    )
-}
-
-fn block_reason(failing: &[&Finding], unsure: &[&Finding]) -> String {
+fn block_reason(failing: &[&Finding], report: &Report) -> String {
     let mut reason = String::from(
         "traitor found changed code that breaks this repo's traits. Fix each one. If you think a verdict is wrong, tell the user why instead of working around it.\n",
     );
@@ -169,31 +157,37 @@ fn block_reason(failing: &[&Finding], unsure: &[&Finding]) -> String {
             .or_default()
             .push(finding);
     }
-    for (slug, findings) in by_trait {
-        let first = findings[0];
+    for findings in by_trait.into_values() {
+        let definition = findings[0].definition;
         let _ = write!(
             reason,
-            "\n{} ({slug})\nwhy: {}\nexpect: {}\n",
-            first.definition.title, first.definition.why, first.definition.expect
+            "\n{}\nwhy: {}\nexpect: {}\n",
+            definition.label(),
+            definition.why,
+            definition.expect
         );
         for finding in findings {
             let _ = writeln!(
                 reason,
                 "- {}, p(fail) {:.2}",
-                location(finding),
+                finding.location(),
                 finding.verdict.probabilities.fail
             );
         }
     }
+    let unsure: Vec<&Finding> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.verdict.answer == Answer::Unsure)
+        .collect();
     if !unsure.is_empty() {
         reason.push_str("\nJev couldn't tell for these from the snippet alone. Read them against the trait yourself:\n");
         for finding in unsure {
             let _ = writeln!(
                 reason,
-                "- {} ({}) at {}",
-                finding.definition.title,
-                finding.definition.slug,
-                location(finding)
+                "- {} at {}",
+                finding.definition.label(),
+                finding.location()
             );
         }
     }
@@ -206,10 +200,9 @@ fn still_failing_message(failing: &[&Finding]) -> String {
     for finding in failing {
         let _ = write!(
             message,
-            "\n- {} ({}) at {}",
-            finding.definition.title,
-            finding.definition.slug,
-            location(finding)
+            "\n- {} at {}",
+            finding.definition.label(),
+            finding.location()
         );
     }
     message

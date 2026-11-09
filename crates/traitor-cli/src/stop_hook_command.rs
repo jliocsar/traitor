@@ -16,7 +16,7 @@ pub async fn run(revision: Option<&str>) -> ExitCode {
         .unwrap_or_default();
     let output = respond(input, revision)
         .await
-        .unwrap_or_else(|error| StopHookOutput::could_not_check(&error.to_string()));
+        .unwrap_or_else(StopHookOutput::could_not_check);
     println!(
         "{}",
         serde_json::to_string(&output).expect("hook output always serializes")

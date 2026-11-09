@@ -9,7 +9,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use crate::glob::{GlobError, compile_globs};
 
 pub const TRAITS_DIRECTORY: &str = ".agents/traits";
-const TRAIT_FILE: &str = "TRAIT.md";
+pub const TRAIT_FILE: &str = "TRAIT.md";
 
 #[derive(Debug, Snafu)]
 pub enum TraitDefinitionError {
@@ -65,6 +65,10 @@ impl TraitDefinition {
             expect: frontmatter.expect,
             paths: compile_globs(path, &frontmatter.paths)?,
         })
+    }
+
+    pub fn label(&self) -> String {
+        format!("{} ({})", self.title, self.slug)
     }
 
     pub(crate) fn applies_to(&self, path: &str) -> bool {

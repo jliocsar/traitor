@@ -24,7 +24,7 @@ pub(crate) fn compile_globs(path: &Path, globs: &[String]) -> Result<GlobSet, Gl
             Ok(builder)
         })?
         .build()
-        .context(GlobSnafu {
+        .with_context(|_| GlobSnafu {
             path,
             glob: globs.join(", "),
         })

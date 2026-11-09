@@ -1,7 +1,7 @@
 use snafu::Snafu;
 
 use crate::cache::VerdictCache;
-use crate::climb::{Snippet, language_name, snippets_for_changes};
+use crate::climb::{Snippet, snippets_for_changes};
 use crate::configured_repository::ConfiguredRepository;
 use crate::git::GitError;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
@@ -28,6 +28,15 @@ pub struct Finding<'repository> {
     pub from_cache: bool,
 }
 
+impl Finding<'_> {
+    pub fn location(&self) -> String {
+        format!(
+            "{}:{}-{}",
+            self.path, self.snippet.first_line, self.snippet.last_line
+        )
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Report<'repository> {
     pub snippet_count: usize,
@@ -46,15 +55,14 @@ struct ChangedSnippet<'repository> {
     traits: Vec<&'repository TraitDefinition>,
 }
 
-impl ChangedSnippet<'_> {
-    fn request(&self) -> JudgeRequest<'_> {
+impl<'repository> ChangedSnippet<'repository> {
+    fn request(&self) -> JudgeRequest<'_, 'repository> {
         JudgeRequest {
-            state: SnippetState {
-                path: &self.path,
-                language: language_name(&self.path),
-                signature: self.snippet.signature.as_deref(),
-                snippet: &self.snippet.text,
-            },
+            state: SnippetState::new(
+                &self.path,
+                self.snippet.signature.as_deref(),
+                &self.snippet.text,
+            ),
             traits: self.traits.clone(),
         }
     }
@@ -88,26 +96,23 @@ pub async fn check<'repository, J: Judge>(
 
     let requests: Vec<JudgeRequest> = changed.iter().map(ChangedSnippet::request).collect();
     let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
+    let snippet_count = changed.len();
     let findings = changed
-        .iter()
+        .into_iter()
         .zip(judged)
         .flat_map(|(changed, judged)| {
-            changed
-                .traits
-                .iter()
-                .zip(judged)
-                .map(|(definition, judged)| Finding {
-                    path: changed.path.clone(),
-                    snippet: changed.snippet.clone(),
-                    definition,
-                    fails_check: repository.fails_check(definition, &judged.verdict),
-                    verdict: judged.verdict,
-                    from_cache: judged.from_cache,
-                })
+            judged.into_iter().map(move |judged| Finding {
+                path: changed.path.clone(),
+                snippet: changed.snippet.clone(),
+                definition: judged.definition,
+                fails_check: repository.fails_check(judged.definition, &judged.verdict),
+                verdict: judged.verdict,
+                from_cache: judged.from_cache,
+            })
         })
         .collect();
     Ok(Report {
-        snippet_count: changed.len(),
+        snippet_count,
         findings,
     })
 }

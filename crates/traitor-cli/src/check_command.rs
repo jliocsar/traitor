@@ -60,13 +60,10 @@ fn print_report(report: &Report) {
 
 fn print_finding(finding: &Finding) {
     println!(
-        "{}: {} ({}) at {}:{}-{}, p(fail) {:.2}",
+        "{}: {} at {}, p(fail) {:.2}",
         finding.verdict.answer.label(),
-        finding.definition.title,
-        finding.definition.slug,
-        finding.path,
-        finding.snippet.first_line,
-        finding.snippet.last_line,
+        finding.definition.label(),
+        finding.location(),
         finding.verdict.probabilities.fail
     );
     println!("  why: {}", finding.definition.why);

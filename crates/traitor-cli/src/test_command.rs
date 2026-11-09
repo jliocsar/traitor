@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::env;
 
 use traitor_ai_typesafe::TypeSafeJudge;
-use traitor_core::case::{CaseReport, CaseResult, test_cases};
+use traitor_core::case::{
+    CaseReport, CaseResult, FAIL_CASES_DIRECTORY, PASS_CASES_DIRECTORY, test_cases,
+};
 use traitor_core::configured_repository::ConfiguredRepository;
 use traitor_core::store::JsonStore;
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
@@ -68,7 +70,7 @@ fn print_case_report(report: &CaseReport) {
     );
     if !report.traits_without_cases.is_empty() {
         println!(
-            "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/pass and fail.",
+            "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/{PASS_CASES_DIRECTORY} and {FAIL_CASES_DIRECTORY}.",
             report.traits_without_cases.join(", ")
         );
     }

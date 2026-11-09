@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use snafu::{ResultExt, Snafu};
 
 use crate::cache::VerdictCache;
-use crate::climb::language_name;
 use crate::configured_repository::ConfiguredRepository;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
@@ -12,7 +11,12 @@ use crate::store::JsonStore;
 use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition, visible_entries};
 use crate::verdict::{Answer, Verdict};
 
-const CASE_DIRECTORIES: [(&str, Answer); 2] = [("pass", Answer::Pass), ("fail", Answer::Fail)];
+pub const PASS_CASES_DIRECTORY: &str = "pass";
+pub const FAIL_CASES_DIRECTORY: &str = "fail";
+const CASE_DIRECTORIES: [(&str, Answer); 2] = [
+    (PASS_CASES_DIRECTORY, Answer::Pass),
+    (FAIL_CASES_DIRECTORY, Answer::Fail),
+];
 const CASE_FILE_STEM: &str = "case";
 
 #[derive(Debug, Snafu)]
@@ -66,15 +70,10 @@ struct Case<'repository> {
     contents: String,
 }
 
-impl Case<'_> {
-    fn request(&self) -> JudgeRequest<'_> {
+impl<'repository> Case<'repository> {
+    fn request(&self) -> JudgeRequest<'_, 'repository> {
         JudgeRequest {
-            state: SnippetState {
-                path: &self.neutral_path,
-                language: language_name(&self.path),
-                signature: None,
-                snippet: &self.contents,
-            },
+            state: SnippetState::new(&self.neutral_path, None, &self.contents),
             traits: vec![self.definition],
         }
     }
@@ -111,13 +110,15 @@ pub async fn test_cases<'repository, J: Judge>(
     let judged = judge_through_cache(judge, &VerdictCache::new(store), &requests).await?;
     let results = cases
         .into_iter()
-        .zip(judged.into_iter().flatten())
-        .map(|(case, judged)| CaseResult {
-            definition: case.definition,
-            path: case.path,
-            expected: case.expected,
-            verdict: judged.verdict,
-            from_cache: judged.from_cache,
+        .zip(judged)
+        .flat_map(|(case, judged)| {
+            judged.into_iter().map(move |judged| CaseResult {
+                definition: judged.definition,
+                path: case.path.clone(),
+                expected: case.expected,
+                verdict: judged.verdict,
+                from_cache: judged.from_cache,
+            })
         })
         .collect();
     Ok(CaseReport {
@@ -140,11 +141,14 @@ fn cases_of<'repository>(
         let files = visible_entries(&directory)
             .context(ReadCaseSnafu { path: &directory })?
             .into_iter()
-            .filter(|entry| entry.path().is_file());
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file());
         for file in files {
-            let name = file.file_name().to_string_lossy().into_owned();
-            let contents =
-                fs::read_to_string(file.path()).context(ReadCaseSnafu { path: file.path() })?;
+            let name = file
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let contents = fs::read_to_string(&file).context(ReadCaseSnafu { path: &file })?;
             cases.push(Case {
                 definition,
                 path: format!("{}/{folder}/{name}", trait_directory.display()),

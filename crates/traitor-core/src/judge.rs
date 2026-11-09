@@ -11,13 +11,13 @@ use crate::verdict::Verdict;
 const CONCURRENT_REQUESTS: usize = 4;
 
 #[derive(Debug, Clone)]
-pub struct JudgeRequest<'a> {
-    pub state: SnippetState<'a>,
-    pub traits: Vec<&'a TraitDefinition>,
+pub struct JudgeRequest<'state, 'repository> {
+    pub state: SnippetState<'state>,
+    pub traits: Vec<&'repository TraitDefinition>,
 }
 
-impl<'a> JudgeRequest<'a> {
-    pub fn questions(&self) -> impl Iterator<Item = (&'a str, Question<'a>)> {
+impl<'repository> JudgeRequest<'_, 'repository> {
+    pub fn questions(&self) -> impl Iterator<Item = (&'repository str, Question<'repository>)> {
         self.traits
             .iter()
             .copied()
@@ -32,7 +32,7 @@ pub trait Judge {
 
     fn judge(
         &self,
-        request: &JudgeRequest<'_>,
+        request: &JudgeRequest<'_, '_>,
     ) -> impl Future<Output = Result<BTreeMap<String, Verdict>, Self::Error>>;
 }
 
@@ -47,30 +47,40 @@ pub enum JudgingError {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Judged {
+pub(crate) struct Judged<'repository> {
+    pub(crate) definition: &'repository TraitDefinition,
     pub(crate) verdict: Verdict,
     pub(crate) from_cache: bool,
 }
 
-struct CachedQuestion {
+struct CachedQuestion<'repository> {
+    definition: &'repository TraitDefinition,
     key: String,
     verdict: Option<Verdict>,
 }
 
-pub(crate) async fn judge_through_cache<J: Judge>(
+pub(crate) async fn judge_through_cache<'repository, J: Judge>(
     judge: &J,
-    cache: &VerdictCache,
-    requests: &[JudgeRequest<'_>],
-) -> Result<Vec<Vec<Judged>>, JudgingError> {
+    cache: &VerdictCache<'_>,
+    requests: &[JudgeRequest<'_, 'repository>],
+) -> Result<Vec<Vec<Judged<'repository>>>, JudgingError> {
     let cached: Vec<Vec<CachedQuestion>> = requests
         .iter()
         .map(|request| {
             request
-                .questions()
-                .map(|(_, question)| {
-                    let key = VerdictCache::key(judge.model(), &question, &request.state);
-                    let verdict = cache.read(&key);
-                    CachedQuestion { key, verdict }
+                .traits
+                .iter()
+                .map(|definition| {
+                    let key = VerdictCache::key(
+                        judge.model(),
+                        &Question::about(definition),
+                        &request.state,
+                    );
+                    CachedQuestion {
+                        definition,
+                        verdict: cache.read(&key),
+                        key,
+                    }
                 })
                 .collect()
         })
@@ -79,13 +89,11 @@ pub(crate) async fn judge_through_cache<J: Judge>(
         .iter()
         .zip(&cached)
         .enumerate()
-        .filter_map(|(index, (request, cached))| {
-            let traits: Vec<&TraitDefinition> = request
-                .traits
+        .filter_map(|(index, (request, questions))| {
+            let traits: Vec<&TraitDefinition> = questions
                 .iter()
-                .zip(cached)
-                .filter(|(_, question)| question.verdict.is_none())
-                .map(|(definition, _)| *definition)
+                .filter(|question| question.verdict.is_none())
+                .map(|question| question.definition)
                 .collect();
             (!traits.is_empty()).then_some((
                 index,
@@ -109,30 +117,29 @@ pub(crate) async fn judge_through_cache<J: Judge>(
         .map_err(|error| JudgingError::Judge {
             source: Box::new(error),
         })?;
-    requests
-        .iter()
-        .zip(cached)
+    cached
+        .into_iter()
         .enumerate()
-        .map(|(index, (request, questions))| {
-            request
-                .traits
-                .iter()
-                .zip(questions)
-                .map(|(definition, question)| {
+        .map(|(index, questions)| {
+            questions
+                .into_iter()
+                .map(|question| {
                     if let Some(verdict) = question.verdict {
                         return Ok(Judged {
+                            definition: question.definition,
                             verdict,
                             from_cache: true,
                         });
                     }
                     let verdict = answers
                         .get_mut(&index)
-                        .and_then(|verdicts| verdicts.remove(&definition.slug))
+                        .and_then(|verdicts| verdicts.remove(&question.definition.slug))
                         .context(MissingVerdictSnafu {
-                            slug: &definition.slug,
+                            slug: &question.definition.slug,
                         })?;
                     cache.write(&question.key, &verdict);
                     Ok(Judged {
+                        definition: question.definition,
                         verdict,
                         from_cache: false,
                     })

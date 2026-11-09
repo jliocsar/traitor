@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -107,36 +108,35 @@ pub(crate) fn snippets_for_changes(
     let lines = Lines::new(source);
     let parsed = Language::from_path(path)
         .and_then(|language| language.parse(source).map(|tree| (language, tree)));
-    let selections = changes
-        .iter()
-        .flat_map(|change| match &parsed {
-            Some((language, tree)) => {
-                select_for_change(*language, tree.root_node(), &lines, *change)
-            }
-            None => lines.window(*change).into_iter().collect(),
-        })
-        .collect();
+    let selections = match &parsed {
+        Some((language, tree)) => changes
+            .iter()
+            .flat_map(|change| select_for_change(*language, tree.root_node(), &lines, *change))
+            .collect(),
+        None => changes
+            .iter()
+            .filter_map(|change| lines.window(*change))
+            .collect(),
+    };
     outermost(selections)
         .into_iter()
         .map(|selection| lines.snippet(selection))
         .collect()
 }
 
-fn select_for_change(
+fn select_for_change<'lines>(
     language: Language,
-    root: Node,
-    lines: &Lines,
+    root: Node<'lines>,
+    lines: &'lines Lines,
     change: LineRange,
-) -> Vec<Selection> {
+) -> impl Iterator<Item = Selection> + 'lines {
     lines
         .content_ranges(change)
-        .into_iter()
-        .filter_map(|(start, end)| {
+        .filter_map(move |(start, end)| {
             root.descendant_for_byte_range(start, end)
                 .and_then(|covering| select_for_node(language, covering, lines.source))
                 .or_else(|| lines.window(change))
         })
-        .collect()
 }
 
 fn select_for_node(language: Language, covering: Node, source: &str) -> Option<Selection> {
@@ -225,21 +225,9 @@ fn declared_function(declaration: Node) -> Option<Node> {
 }
 
 fn outermost(mut selections: Vec<Selection>) -> Vec<Selection> {
-    selections.sort_by(|left, right| {
-        left.start_byte
-            .cmp(&right.start_byte)
-            .then(right.end_byte.cmp(&left.end_byte))
-    });
-    let mut kept: Vec<Selection> = Vec::new();
-    for selection in selections {
-        if kept
-            .last()
-            .is_none_or(|last| selection.end_byte > last.end_byte)
-        {
-            kept.push(selection);
-        }
-    }
-    kept
+    selections.sort_by_key(|selection| (selection.start_byte, Reverse(selection.end_byte)));
+    selections.dedup_by(|inner, outer| inner.end_byte <= outer.end_byte);
+    selections
 }
 
 impl Selection {
@@ -277,11 +265,10 @@ impl<'source> Lines<'source> {
         (start, end)
     }
 
-    fn content_ranges(&self, change: LineRange) -> Vec<(usize, usize)> {
-        let Some((first, last)) = self.clamp(change) else {
-            return Vec::new();
-        };
-        (first..=last)
+    fn content_ranges(&self, change: LineRange) -> impl Iterator<Item = (usize, usize)> {
+        self.clamp(change)
+            .into_iter()
+            .flat_map(|(first, last)| first..=last)
             .filter_map(|line| {
                 let (start, end) = self.byte_range(line);
                 let text = &self.source[start..end];
@@ -289,7 +276,6 @@ impl<'source> Lines<'source> {
                 let trailing = text.len() - text.trim_end().len();
                 (leading < text.len()).then_some((start + leading, end - trailing))
             })
-            .collect()
     }
 
     fn window(&self, change: LineRange) -> Option<Selection> {

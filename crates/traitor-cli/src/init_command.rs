@@ -1,8 +1,10 @@
 use std::env;
 
 use semver::Version;
+use traitor_ai_typesafe::API_HOST;
 use traitor_core::config::CONFIG_PATH;
 use traitor_core::init::{InitOutcome, init};
+use traitor_core::trait_definition::{TRAIT_FILE, TRAITS_DIRECTORY};
 
 use crate::{CommandResult, Outcome};
 
@@ -13,13 +15,13 @@ pub fn run() -> CommandResult {
             println!("Wrote {CONFIG_PATH}.");
             println!();
             println!(
-                "From now on, `traitor check` sends each changed snippet in this repo to TypeSafe (api.typesafe.ai) to be judged. TypeSafe says it doesn't train on what it receives, and keeps it for as long as is reasonably necessary."
+                "From now on, `traitor check` sends each changed snippet in this repo to TypeSafe ({API_HOST}) to be judged. TypeSafe says it doesn't train on what it receives, and keeps it for as long as is reasonably necessary."
             );
             println!(
                 "Committing {CONFIG_PATH} is how this repo agrees to that, for everyone who works on it. Delete it to stop."
             );
             println!();
-            println!("Next, add a trait as .agents/traits/<slug>/TRAIT.md.");
+            println!("Next, add a trait as {TRAITS_DIRECTORY}/<slug>/{TRAIT_FILE}.");
         }
         InitOutcome::AlreadyCurrent => {
             println!("{CONFIG_PATH} is already on traitor {version}.");

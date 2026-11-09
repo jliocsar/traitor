@@ -115,7 +115,6 @@ fn upgrade(
             }
         }
     };
-    config.remove(SCHEMA_KEY);
     config.shift_insert(0, SCHEMA_KEY.to_string(), Value::String(current_url));
     write_config(path, &config)?;
     Ok(outcome)

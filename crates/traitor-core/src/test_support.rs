@@ -50,7 +50,7 @@ impl Judge for FakeJudge {
 
     async fn judge(
         &self,
-        request: &JudgeRequest<'_>,
+        request: &JudgeRequest<'_, '_>,
     ) -> Result<BTreeMap<String, Verdict>, Offline> {
         self.calls.set(self.calls.get() + 1);
         self.states
