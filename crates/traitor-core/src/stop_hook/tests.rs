@@ -12,7 +12,7 @@ use crate::verdict::Verdict;
 
 static RAILWAY: LazyLock<TraitDefinition> = LazyLock::new(railway_definition);
 
-fn finding(path: &str, text: &str, verdict: Verdict, fails_check: bool) -> Finding<'static> {
+fn finding(path: &str, text: &str, verdict: Verdict, threshold: Option<f64>) -> Finding<'static> {
     Finding {
         path: path.to_string(),
         snippet: Snippet {
@@ -23,7 +23,7 @@ fn finding(path: &str, text: &str, verdict: Verdict, fails_check: bool) -> Findi
         },
         definition: &RAILWAY,
         verdict,
-        fails_check,
+        threshold,
         from_cache: false,
     }
 }
@@ -38,7 +38,12 @@ fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
 #[test]
 fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
     let (output, blocked) = respond(
-        &report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]),
+        &report(vec![finding(
+            "src/a.ts",
+            "let a = 1",
+            verdict(true),
+            Some(0.5),
+        )]),
         &BTreeSet::new(),
     );
     assert_eq!(output.decision, Some(Decision::Block));
@@ -55,7 +60,12 @@ fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
 
 #[test]
 fn the_same_fails_block_only_once() {
-    let failing = report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]);
+    let failing = report(vec![finding(
+        "src/a.ts",
+        "let a = 1",
+        verdict(true),
+        Some(0.5),
+    )]);
     let (_, blocked) = respond(&failing, &BTreeSet::new());
     let (output, _) = respond(&failing, &blocked);
     assert_eq!(output.decision, None);
@@ -65,11 +75,21 @@ fn the_same_fails_block_only_once() {
 #[test]
 fn a_changed_fail_blocks_again() {
     let (_, blocked) = respond(
-        &report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]),
+        &report(vec![finding(
+            "src/a.ts",
+            "let a = 1",
+            verdict(true),
+            Some(0.5),
+        )]),
         &BTreeSet::new(),
     );
     let (output, _) = respond(
-        &report(vec![finding("src/a.ts", "let a = 2", verdict(true), true)]),
+        &report(vec![finding(
+            "src/a.ts",
+            "let a = 2",
+            verdict(true),
+            Some(0.5),
+        )]),
         &blocked,
     );
     assert_eq!(output.decision, Some(Decision::Block));
@@ -79,13 +99,18 @@ fn a_changed_fail_blocks_again() {
 fn fixing_one_of_two_fails_does_not_block_again() {
     let (_, blocked) = respond(
         &report(vec![
-            finding("src/a.ts", "let a = 1", verdict(true), true),
-            finding("src/b.ts", "let b = 1", verdict(true), true),
+            finding("src/a.ts", "let a = 1", verdict(true), Some(0.5)),
+            finding("src/b.ts", "let b = 1", verdict(true), Some(0.5)),
         ]),
         &BTreeSet::new(),
     );
     let (output, _) = respond(
-        &report(vec![finding("src/a.ts", "let a = 1", verdict(true), true)]),
+        &report(vec![finding(
+            "src/a.ts",
+            "let a = 1",
+            verdict(true),
+            Some(0.5),
+        )]),
         &blocked,
     );
     assert_eq!(output.decision, None);
@@ -94,7 +119,7 @@ fn fixing_one_of_two_fails_does_not_block_again() {
 #[test]
 fn a_fail_without_a_threshold_lets_the_agent_stop() {
     let (output, blocked) = respond(
-        &report(vec![finding("src/a.ts", "let a = 1", verdict(true), false)]),
+        &report(vec![finding("src/a.ts", "let a = 1", verdict(true), None)]),
         &BTreeSet::new(),
     );
     assert_eq!(output, StopHookOutput::default());
@@ -107,8 +132,8 @@ fn unsure_snippets_ride_along_with_a_block() {
     unsure.answer = Answer::Unsure;
     let (output, _) = respond(
         &report(vec![
-            finding("src/a.ts", "let a = 1", verdict(true), true),
-            finding("src/c.ts", "maybe", unsure, false),
+            finding("src/a.ts", "let a = 1", verdict(true), Some(0.5)),
+            finding("src/c.ts", "maybe", unsure, None),
         ]),
         &BTreeSet::new(),
     );

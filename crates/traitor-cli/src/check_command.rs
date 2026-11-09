@@ -25,7 +25,7 @@ pub async fn run(revision: Option<&str>) -> CommandResult {
 fn print_report(report: &Report) {
     let annotate = env::var("GITHUB_ACTIONS").is_ok_and(|value| value == "true");
     let worth_reading = report.findings.iter().filter(|finding| {
-        finding.fails_check || matches!(finding.verdict.answer, Answer::Fail | Answer::Unsure)
+        finding.fails_check() || matches!(finding.verdict.answer, Answer::Fail | Answer::Unsure)
     });
     for finding in worth_reading {
         print_finding(finding);
@@ -40,18 +40,18 @@ fn print_report(report: &Report) {
             .filter(|finding| finding.verdict.answer == answer)
             .count()
     };
-    let fail_count = count(Answer::Fail);
     let cached = report
         .findings
         .iter()
         .filter(|finding| finding.from_cache)
         .count();
     println!(
-        "traitor judged {} snippets: {fail_count} fail, {} unsure, {cached} verdicts from the cache.",
+        "traitor judged {} snippets: {} fail, {} unsure, {cached} verdicts from the cache.",
         report.snippet_count,
+        count(Answer::Fail),
         count(Answer::Unsure),
     );
-    if fail_count > 0 && !report.fails_check() {
+    if report.fails_are_only_reported() {
         println!(
             "No failing trait has a threshold in {CONFIG_PATH}, so its fails are reported and don't fail the check."
         );
@@ -76,7 +76,7 @@ fn print_finding(finding: &Finding) {
 }
 
 fn print_annotation(finding: &Finding) {
-    let level = if finding.fails_check {
+    let level = if finding.fails_check() {
         "error"
     } else {
         "warning"

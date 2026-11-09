@@ -46,7 +46,7 @@ fn judges_each_changed_unit_and_fails_over_the_threshold() {
             .map(|finding| (
                 finding.snippet.first_line,
                 finding.verdict.answer,
-                finding.fails_check
+                finding.fails_check()
             ))
             .collect::<Vec<_>>(),
         vec![(1, Answer::Fail, true), (9, Answer::Pass, false)]
@@ -85,6 +85,23 @@ fn without_a_threshold_a_fail_is_only_reported() {
             .any(|finding| finding.verdict.answer == Answer::Fail)
     );
     assert!(!report.fails_check());
+    assert!(report.fails_are_only_reported());
+}
+
+#[test]
+fn a_fail_under_its_threshold_neither_fails_the_check_nor_counts_as_only_reported() {
+    let directory = repository(r#"{ "traits": { "railway-not-guards": { "threshold": 0.99 } } }"#);
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let report = block_on(check(
+        &repository,
+        None,
+        &FakeJudge::new(),
+        &cache_in(&cache),
+    ))
+    .unwrap();
+    assert!(!report.fails_check());
+    assert!(!report.fails_are_only_reported());
 }
 
 #[test]

@@ -11,7 +11,6 @@ use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu, ensure};
 
 use crate::glob::{GlobError, compile_globs};
-use crate::verdict::Verdict;
 
 pub const CONFIG_PATH: &str = ".agents/traitor.json";
 pub(crate) const SCHEMA_KEY: &str = "$schema";
@@ -131,11 +130,8 @@ impl Config {
         Ok(Self { traits })
     }
 
-    pub(crate) fn fails_check(&self, slug: &str, verdict: &Verdict) -> bool {
-        self.traits
-            .get(slug)
-            .and_then(|policy| policy.threshold)
-            .is_some_and(|threshold| verdict.probabilities.fail >= threshold)
+    pub(crate) fn threshold(&self, slug: &str) -> Option<f64> {
+        self.traits.get(slug).and_then(|policy| policy.threshold)
     }
 
     pub(crate) fn is_exempt(&self, slug: &str, path: &str) -> bool {

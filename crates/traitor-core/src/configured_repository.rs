@@ -7,7 +7,6 @@ use crate::git::{GitError, Repository};
 use crate::trait_definition::{
     TRAITS_DIRECTORY, TraitDefinition, TraitDefinitionError, load_trait_definitions,
 };
-use crate::verdict::Verdict;
 
 #[derive(Debug, Snafu)]
 pub enum OpenError {
@@ -76,7 +75,7 @@ impl ConfiguredRepository {
             .collect()
     }
 
-    pub(crate) fn fails_check(&self, definition: &TraitDefinition, verdict: &Verdict) -> bool {
-        self.config.fails_check(&definition.slug, verdict)
+    pub(crate) fn threshold(&self, definition: &TraitDefinition) -> Option<f64> {
+        self.config.threshold(&definition.slug)
     }
 }

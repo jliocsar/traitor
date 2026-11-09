@@ -7,7 +7,7 @@ use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
 use crate::store::JsonStore;
 use crate::trait_definition::TraitDefinition;
-use crate::verdict::Verdict;
+use crate::verdict::{Answer, Verdict};
 
 #[derive(Debug, Snafu)]
 pub enum CheckError {
@@ -23,11 +23,16 @@ pub struct Finding<'repository> {
     pub snippet: Snippet,
     pub definition: &'repository TraitDefinition,
     pub verdict: Verdict,
-    pub fails_check: bool,
+    pub threshold: Option<f64>,
     pub from_cache: bool,
 }
 
 impl Finding<'_> {
+    pub fn fails_check(&self) -> bool {
+        self.threshold
+            .is_some_and(|threshold| self.verdict.probabilities.fail >= threshold)
+    }
+
     pub fn location(&self) -> String {
         format!(
             "{}:{}-{}",
@@ -44,7 +49,17 @@ pub struct Report<'repository> {
 
 impl Report<'_> {
     pub fn fails_check(&self) -> bool {
-        self.findings.iter().any(|finding| finding.fails_check)
+        self.findings.iter().any(Finding::fails_check)
+    }
+
+    /// Whether there are fails, and none of their traits has a threshold to fail the check with.
+    pub fn fails_are_only_reported(&self) -> bool {
+        let mut fails = self
+            .findings
+            .iter()
+            .filter(|finding| finding.verdict.answer == Answer::Fail)
+            .peekable();
+        fails.peek().is_some() && fails.all(|finding| finding.threshold.is_none())
     }
 }
 
@@ -102,7 +117,7 @@ pub async fn check<'repository, J: Judge>(
                 path: changed.path.clone(),
                 snippet: changed.snippet.clone(),
                 definition: judged.definition,
-                fails_check: repository.fails_check(judged.definition, &judged.verdict),
+                threshold: repository.threshold(judged.definition),
                 verdict: judged.verdict,
                 from_cache: judged.from_cache,
             })

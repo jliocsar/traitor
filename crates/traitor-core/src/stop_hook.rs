@@ -115,7 +115,7 @@ fn respond(
     let failing: Vec<&Finding> = report
         .findings
         .iter()
-        .filter(|finding| finding.fails_check)
+        .filter(|finding| finding.fails_check())
         .collect();
     let failing_identities: BTreeSet<String> =
         failing.iter().map(|finding| identity(finding)).collect();
