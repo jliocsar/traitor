@@ -83,10 +83,25 @@ fn print_annotation(finding: &Finding) {
     };
     println!(
         "::{level} file={},line={},endLine={},title={}::{}",
-        finding.path,
+        escape_annotation_property(&finding.path),
         finding.snippet.first_line,
         finding.snippet.last_line,
-        finding.definition.title.replace(',', "%2C"),
-        finding.definition.why
+        escape_annotation_property(&finding.definition.title),
+        escape_annotation_message(&finding.definition.why)
     );
 }
+
+fn escape_annotation_message(text: &str) -> String {
+    text.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+fn escape_annotation_property(text: &str) -> String {
+    escape_annotation_message(text)
+        .replace(':', "%3A")
+        .replace(',', "%2C")
+}
+
+#[cfg(test)]
+mod tests;
