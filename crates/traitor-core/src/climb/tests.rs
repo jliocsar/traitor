@@ -169,6 +169,55 @@ fn a_unit_that_does_not_parse_falls_back_to_a_line_window() {
 }
 
 #[test]
+fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
+    let broken = "function broken( {\n  return 1\n}\n";
+    let source = format!("{MODULE}\n{broken}\n{MODULE}");
+    let snippets = snippets_for_changes("src/module.ts", &source, &[LineRange::WHOLE_FILE]);
+    assert!(snippets.len() > 3);
+    assert!(
+        snippets
+            .iter()
+            .all(|snippet| estimate_token_count(&snippet.text) <= BUDGET_TOKENS)
+    );
+}
+
+#[test]
+fn a_long_new_file_in_an_unknown_language_is_cut_to_the_budget() {
+    let source: String = (1..=2000).map(|line| format!("line {line}\n")).collect();
+    let snippets = snippets_for_changes("src/main.rs", &source, &[LineRange::WHOLE_FILE]);
+    assert!(snippets.len() > 1);
+    assert!(
+        snippets
+            .iter()
+            .all(|snippet| estimate_token_count(&snippet.text) <= BUDGET_TOKENS)
+    );
+    assert_eq!(
+        snippets
+            .iter()
+            .map(|snippet| snippet.text.lines().count())
+            .sum::<usize>(),
+        2000
+    );
+}
+
+#[test]
+fn an_empty_new_file_selects_nothing() {
+    assert_eq!(
+        snippets_for_changes("src/__init__.py", "", &[LineRange::WHOLE_FILE]),
+        Vec::new()
+    );
+}
+
+#[test]
+fn blank_lines_in_an_unknown_language_select_nothing() {
+    let source = "a = 1\n\n\nb = 2\n";
+    assert_eq!(
+        snippets_for_changes("src/main.py", source, &[lines(2, 3)]),
+        Vec::new()
+    );
+}
+
+#[test]
 fn an_unknown_language_falls_back_to_a_line_window() {
     let source: String = (1..=50).map(|line| format!("line {line}\n")).collect();
     let snippets = snippets_for_changes("src/main.rs", &source, &[lines(30, 31)]);

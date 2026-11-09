@@ -108,35 +108,26 @@ pub(crate) fn snippets_for_changes(
     let lines = Lines::new(source);
     let parsed = Language::from_path(path)
         .and_then(|language| language.parse(source).map(|tree| (language, tree)));
-    let selections = match &parsed {
-        Some((language, tree)) => changes
-            .iter()
-            .flat_map(|change| select_for_change(*language, tree.root_node(), &lines, *change))
-            .collect(),
-        None => changes
-            .iter()
-            .filter_map(|change| lines.window(*change))
-            .collect(),
-    };
+    let mut selections = Vec::new();
+    let mut unplaced = Vec::new();
+    for (line, start, end) in changes
+        .iter()
+        .flat_map(|change| lines.content_ranges(*change))
+    {
+        let placed = parsed.as_ref().and_then(|(language, tree)| {
+            let covering = tree.root_node().descendant_for_byte_range(start, end)?;
+            select_for_node(*language, covering, source)
+        });
+        match placed {
+            Some(selection) => selections.push(selection),
+            None => unplaced.push(line),
+        }
+    }
+    selections.extend(lines.windows(unplaced));
     outermost(selections)
         .into_iter()
         .map(|selection| lines.snippet(selection))
         .collect()
-}
-
-fn select_for_change<'lines>(
-    language: Language,
-    root: Node<'lines>,
-    lines: &'lines Lines,
-    change: LineRange,
-) -> impl Iterator<Item = Selection> + 'lines {
-    lines
-        .content_ranges(change)
-        .filter_map(move |(start, end)| {
-            root.descendant_for_byte_range(start, end)
-                .and_then(|covering| select_for_node(language, covering, lines.source))
-                .or_else(|| lines.window(change))
-        })
 }
 
 fn select_for_node(language: Language, covering: Node, source: &str) -> Option<Selection> {
@@ -265,7 +256,7 @@ impl<'source> Lines<'source> {
         (start, end)
     }
 
-    fn content_ranges(&self, change: LineRange) -> impl Iterator<Item = (usize, usize)> {
+    fn content_ranges(&self, change: LineRange) -> impl Iterator<Item = (usize, usize, usize)> {
         self.clamp(change)
             .into_iter()
             .flat_map(|(first, last)| first..=last)
@@ -274,19 +265,44 @@ impl<'source> Lines<'source> {
                 let text = &self.source[start..end];
                 let leading = text.len() - text.trim_start().len();
                 let trailing = text.len() - text.trim_end().len();
-                (leading < text.len()).then_some((start + leading, end - trailing))
+                (leading < text.len()).then_some((line, start + leading, end - trailing))
             })
     }
 
-    fn window(&self, change: LineRange) -> Option<Selection> {
-        let (first, last) = self.clamp(change)?;
-        let first = first.saturating_sub(LINE_WINDOW).max(1);
-        let last = (last + LINE_WINDOW).min(self.starts.len());
-        Some(Selection {
-            start_byte: self.byte_range(first).0,
-            end_byte: self.byte_range(last).1,
-            signature: None,
-        })
+    fn windows(&self, mut changed: Vec<usize>) -> Vec<Selection> {
+        changed.sort_unstable();
+        changed.dedup();
+        let mut windows = Vec::new();
+        let mut previous_last = 0;
+        let mut rest = changed.as_slice();
+        while let Some(&line) = rest.first() {
+            let first = line.saturating_sub(LINE_WINDOW).max(previous_last + 1);
+            let mut last = line;
+            loop {
+                let covered = rest.partition_point(|changed| *changed <= last);
+                let next = last + 1;
+                if next > self.starts.len()
+                    || next > rest[covered - 1] + LINE_WINDOW
+                    || !self.lines_fit(first, next)
+                {
+                    break;
+                }
+                last = next;
+            }
+            rest = &rest[rest.partition_point(|changed| *changed <= last)..];
+            windows.push(Selection {
+                start_byte: self.byte_range(first).0,
+                end_byte: self.byte_range(last).1,
+                signature: None,
+            });
+            previous_last = last;
+        }
+        windows
+    }
+
+    fn lines_fit(&self, first: usize, last: usize) -> bool {
+        let text = &self.source[self.byte_range(first).0..self.byte_range(last).1];
+        estimate_token_count(text) <= BUDGET_TOKENS
     }
 
     fn line_of(&self, byte: usize) -> usize {
