@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
+use schemars::JsonSchema;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu, ensure};
 
@@ -43,28 +44,52 @@ pub enum ConfigError {
     InvalidExemption { source: TraitDefinitionError },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    title = "traitor config",
+    description = "A repo's traitor settings, in .agents/traitor.json. Run `traitor init` to create or upgrade it."
+)]
 struct ConfigFile {
     #[serde(rename = "$schema", default)]
+    #[schemars(
+        description = "The schema for the traitor version this config is for. `traitor init` reads the version from it and keeps it current."
+    )]
     _schema: Option<String>,
     #[serde(default)]
+    #[schemars(
+        description = "Settings for each trait, by the name of its folder in .agents/traits."
+    )]
     traits: BTreeMap<String, TraitSettingsFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "TraitSettings")]
 struct TraitSettingsFile {
     #[serde(default)]
+    #[schemars(
+        range(min = 0.0, max = 1.0),
+        description = "The probability of a fail at or above which this trait fails the check. Without one, the trait's verdicts are only reported."
+    )]
     threshold: Option<f64>,
     #[serde(default)]
+    #[schemars(description = "Paths this trait doesn't judge, each group with its reason.")]
     exempt: Vec<ExemptionFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Exemption")]
 struct ExemptionFile {
+    #[schemars(
+        description = "Globs relative to the repo root, where * stops at a slash and ** crosses them."
+    )]
     paths: Vec<String>,
+    #[schemars(
+        pattern(r"\S"),
+        description = "Why these paths don't have to hold the trait."
+    )]
     reason: String,
 }
 
@@ -119,6 +144,15 @@ impl Config {
     }
 }
 
+pub fn config_json_schema() -> String {
+    let schema = schemars::generate::SchemaSettings::draft2020_12()
+        .into_generator()
+        .into_root_schema_for::<ConfigFile>();
+    let mut text = serde_json::to_string_pretty(&schema).expect("a schema always serializes");
+    text.push('\n');
+    text
+}
+
 impl TraitPolicy {
     fn from_settings(
         path: &Path,
@@ -153,3 +187,6 @@ impl TraitPolicy {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "traitor config",
+  "description": "A repo's traitor settings, in .agents/traitor.json. Run `traitor init` to create or upgrade it.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The schema for the traitor version this config is for. `traitor init` reads the version from it and keeps it current.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "traits": {
+      "description": "Settings for each trait, by the name of its folder in .agents/traits.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/TraitSettings"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "TraitSettings": {
+      "type": "object",
+      "properties": {
+        "threshold": {
+          "description": "The probability of a fail at or above which this trait fails the check. Without one, the trait's verdicts are only reported.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": null
+        },
+        "exempt": {
+          "description": "Paths this trait doesn't judge, each group with its reason.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Exemption"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Exemption": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "description": "Globs relative to the repo root, where * stops at a slash and ** crosses them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "description": "Why these paths don't have to hold the trait.",
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "paths",
+        "reason"
+      ]
+    }
+  }
+}
