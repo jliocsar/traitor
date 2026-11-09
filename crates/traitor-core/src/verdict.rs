@@ -12,6 +12,17 @@ pub enum Answer {
     Unsure,
 }
 
+impl Answer {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Fail => "fail",
+            Self::NotApplicable => "n/a",
+            Self::Unsure => "unsure",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Probabilities {
     pub pass: f64,

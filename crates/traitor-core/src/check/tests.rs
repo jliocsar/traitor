@@ -1,104 +1,19 @@
-use std::cell::Cell;
 use std::fs;
-use std::process::Command;
 
 use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
 use crate::judge::JudgingError;
-use crate::verdict::{Answer, Probabilities};
-
-const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators, not a reassigned let.\npaths:\n  - \"src/**/*.ts\"\n---\n";
+use crate::test_support::{FakeJudge, git, repository_with_trait};
+use crate::verdict::Answer;
 
 const MODULE: &str = "export function guarded(name: string): string {\n  let label = 'untitled'\n  if (name) {\n    label = name\n  }\n  return label\n}\n\nexport const railway = (name: string) => Option.liftPredicate(name, isNonEmpty)\n";
 
-#[derive(Debug, Snafu)]
-#[snafu(display("offline"))]
-struct Offline;
-
-struct FakeJudge {
-    calls: Cell<usize>,
-    offline: bool,
-}
-
-impl FakeJudge {
-    fn new() -> Self {
-        Self {
-            calls: Cell::new(0),
-            offline: false,
-        }
-    }
-}
-
-impl Judge for FakeJudge {
-    type Error = Offline;
-
-    fn model(&self) -> &str {
-        "fake"
-    }
-
-    async fn judge(&self, request: &JudgeRequest) -> Result<BTreeMap<String, Verdict>, Offline> {
-        self.calls.set(self.calls.get() + 1);
-        if self.offline {
-            return Err(Offline);
-        }
-        let fails = request.state.snippet.contains("let ");
-        Ok(request
-            .questions
-            .keys()
-            .map(|slug| (slug.clone(), verdict(fails)))
-            .collect())
-    }
-}
-
-fn verdict(fails: bool) -> Verdict {
-    let fail = if fails { 0.97 } else { 0.01 };
-    Verdict {
-        answer: if fails { Answer::Fail } else { Answer::Pass },
-        confidence: 0.9,
-        probabilities: Probabilities {
-            pass: 1.0 - fail,
-            fail,
-            not_applicable: 0.0,
-            unsure: 0.0,
-        },
-    }
-}
-
-fn git(directory: &Path, arguments: &[&str]) {
-    let status = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .arg("-C")
-        .arg(directory)
-        .args([
-            "-c",
-            "user.name=traitor",
-            "-c",
-            "user.email=traitor@example.com",
-        ])
-        .args(arguments)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {arguments:?}");
-}
-
 fn repository(config: &str) -> TempDir {
-    let directory = tempfile::tempdir().unwrap();
-    let root = directory.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    fs::create_dir_all(root.join(".agents/traits/railway-not-guards")).unwrap();
-    fs::write(
-        root.join(".agents/traits/railway-not-guards/TRAIT.md"),
-        TRAIT,
-    )
-    .unwrap();
-    fs::write(root.join(".agents/traitor.json"), config).unwrap();
-    git(root, &["add", "-A"]);
-    git(root, &["commit", "-q", "-m", "traits"]);
-    fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(root.join("src/module.ts"), MODULE).unwrap();
+    let directory = repository_with_trait(config);
+    fs::create_dir_all(directory.path().join("src")).unwrap();
+    fs::write(directory.path().join("src/module.ts"), MODULE).unwrap();
     directory
 }
 
@@ -203,10 +118,7 @@ fn a_repo_without_a_config_cannot_be_checked() {
 fn an_offline_judge_cannot_check() {
     let directory = repository("{}");
     let cache = TempDir::new().unwrap();
-    let judge = FakeJudge {
-        calls: Cell::new(0),
-        offline: true,
-    };
+    let judge = FakeJudge::offline();
     let result = block_on(check(
         directory.path(),
         None,

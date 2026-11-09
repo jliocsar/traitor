@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod case;
 pub mod check;
 pub mod climb;
 pub mod config;
@@ -9,3 +10,6 @@ pub mod question;
 pub mod token;
 pub mod trait_definition;
 pub mod verdict;
+
+#[cfg(test)]
+mod test_support;
