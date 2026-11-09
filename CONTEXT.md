@@ -24,5 +24,5 @@ Jev's answer for one trait and one snippet: pass, fail, n/a (the snippet has not
 _Avoid_: result, assessment, finding
 
 **Case**:
-A snippet stored beside a trait with the verdict it should get, used only to test the trait and never sent to Jev.
+A snippet stored beside a trait with the verdict it should get, used only to test the trait and never sent to Jev as an example.
 _Avoid_: fixture, test

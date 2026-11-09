@@ -1,0 +1,8 @@
+{
+  "name": "traitor",
+  "description": "Write and test a repo's traits, and check changed code against them when Claude stops",
+  "author": {
+    "name": "JC"
+  },
+  "repository": "https://github.com/jliocsar/traitor"
+}

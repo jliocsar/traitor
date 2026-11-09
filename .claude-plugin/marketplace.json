@@ -1,0 +1,14 @@
+{
+  "name": "traitor",
+  "description": "traitor's Claude Code plugin",
+  "owner": {
+    "name": "JC"
+  },
+  "plugins": [
+    {
+      "name": "traitor",
+      "source": "./plugin",
+      "description": "Write and test a repo's traits, and check changed code against them when Claude stops"
+    }
+  ]
+}

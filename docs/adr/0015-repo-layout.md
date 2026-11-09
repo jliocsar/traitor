@@ -11,6 +11,7 @@ traitor/
 ├── packages/
 │   ├── traitor/                # @jliocsar/traitor: a small launcher plus one optional dependency per platform
 │   └── traitor-<os>-<arch>/    # one package per platform, holding only that binary
+├── .claude-plugin/             # marketplace.json, so `claude plugin marketplace add jliocsar/traitor` finds the plugin
 ├── plugin/                     # the Claude plugin: the skill and the Stop hook
 ├── schema/traitor.schema.json  # generated from the config type
 └── docs/
