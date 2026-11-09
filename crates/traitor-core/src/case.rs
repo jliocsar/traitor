@@ -11,7 +11,11 @@ use crate::question::{Question, SnippetState};
 use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition};
 use crate::verdict::{Answer, Verdict};
 
-const CASE_DIRECTORIES: [(&str, Answer); 2] = [("pass", Answer::Pass), ("fail", Answer::Fail)];
+const CASE_DIRECTORIES: [(&str, Answer); 3] = [
+    ("pass", Answer::Pass),
+    ("fail", Answer::Fail),
+    ("n-a", Answer::NotApplicable),
+];
 const CASE_FILE_STEM: &str = "case";
 
 #[derive(Debug, Snafu)]

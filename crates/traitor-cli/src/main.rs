@@ -44,7 +44,7 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Judge each trait's cases, the files in its pass/ and fail/ folders, and report any that get a different verdict.
+    /// Judge each trait's cases, the files in its pass/, fail/ and n-a/ folders, and report any that get a different verdict.
     Test {
         /// The traits to test, by folder name. Every trait when none are given.
         traits: Vec<String>,

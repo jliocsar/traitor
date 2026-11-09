@@ -57,6 +57,20 @@ fn each_case_is_judged_against_the_verdict_its_folder_names() {
 }
 
 #[test]
+fn an_n_a_case_expects_n_a() {
+    let directory = repository_with_trait("{}");
+    write_case(
+        directory.path(),
+        "n-a",
+        "schema.ts",
+        "export const Shape = Schema.Struct({})\n",
+    );
+    let report = run(directory.path(), &[], &FakeJudge::new()).unwrap();
+    assert_eq!(report.results[0].expected, Answer::NotApplicable);
+    assert!(!report.results[0].holds());
+}
+
+#[test]
 fn the_judge_never_sees_the_folder_or_file_name() {
     let directory = repository_with_trait("{}");
     write_case(
