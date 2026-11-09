@@ -141,16 +141,6 @@ fn unsure_snippets_ride_along_with_a_block() {
 }
 
 #[test]
-fn blocked_fails_persist_per_session() {
-    let directory = TempDir::new().unwrap();
-    let store = BlockedFails::new(&JsonStore::at(directory.path().to_path_buf()));
-    let fails = BTreeSet::from(["one".to_string()]);
-    store.write("session/../odd", &fails);
-    assert_eq!(store.read("session/../odd"), fails);
-    assert!(store.read("another").is_empty());
-}
-
-#[test]
 fn the_output_is_what_a_stop_hook_reads() {
     let output = StopHookOutput {
         decision: Some(Decision::Block),
@@ -167,10 +157,10 @@ fn the_output_is_what_a_stop_hook_reads() {
     );
 }
 
-fn stop(directory: &Path, store: &JsonStore) -> StopHookOutput {
+fn stop(directory: &Path, session_id: &str, store: &JsonStore) -> StopHookOutput {
     block_on(respond_to_stop(
         directory,
-        "session",
+        session_id,
         None,
         &FakeJudge::new(),
         store,
@@ -186,10 +176,29 @@ fn a_stop_blocks_on_new_fails_once_then_lets_the_agent_stop() {
     let cache = TempDir::new().unwrap();
     let store = JsonStore::at(cache.path().to_path_buf());
     assert_eq!(
-        stop(directory.path(), &store).decision,
+        stop(directory.path(), "session", &store).decision,
         Some(Decision::Block)
     );
-    assert_eq!(stop(directory.path(), &store).decision, None);
+    assert_eq!(stop(directory.path(), "session", &store).decision, None);
+}
+
+#[test]
+fn each_session_is_blocked_on_its_own() {
+    let directory =
+        repository_with_trait(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+    fs::create_dir_all(directory.path().join("src")).unwrap();
+    fs::write(directory.path().join("src/module.ts"), "let label = ''\n").unwrap();
+    let cache = TempDir::new().unwrap();
+    let store = JsonStore::at(cache.path().to_path_buf());
+    stop(directory.path(), "session/../odd", &store);
+    assert_eq!(
+        stop(directory.path(), "another", &store).decision,
+        Some(Decision::Block)
+    );
+    assert_eq!(
+        stop(directory.path(), "session/../odd", &store).decision,
+        None
+    );
 }
 
 #[test]
@@ -198,7 +207,11 @@ fn a_repo_without_traits_gets_an_empty_answer() {
     git(directory.path(), &["init", "-q"]);
     let cache = TempDir::new().unwrap();
     assert_eq!(
-        stop(directory.path(), &JsonStore::at(cache.path().to_path_buf())),
+        stop(
+            directory.path(),
+            "session",
+            &JsonStore::at(cache.path().to_path_buf())
+        ),
         StopHookOutput::default()
     );
 }
@@ -208,7 +221,11 @@ fn a_repo_with_traits_but_no_config_says_why_it_couldnt_check() {
     let directory = repository_with_trait("{}");
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
     let cache = TempDir::new().unwrap();
-    let output = stop(directory.path(), &JsonStore::at(cache.path().to_path_buf()));
+    let output = stop(
+        directory.path(),
+        "session",
+        &JsonStore::at(cache.path().to_path_buf()),
+    );
     assert_eq!(output.decision, None);
     assert!(
         output
