@@ -121,7 +121,7 @@ pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change])
     }
     let windows = lines.windows(unplaced, &selections);
     selections.extend(windows);
-    outermost(selections)
+    merge_overlapping(selections, source)
         .into_iter()
         .map(|selection| lines.snippet(selection))
         .collect()
@@ -212,10 +212,26 @@ fn declared_function(declaration: Node) -> Option<Node> {
         .find(|value| FUNCTION_VALUE_KINDS.contains(&value.kind()))
 }
 
-fn outermost(mut selections: Vec<Selection>) -> Vec<Selection> {
+fn merge_overlapping(mut selections: Vec<Selection>, source: &str) -> Vec<Selection> {
     selections.sort_by_key(|selection| (selection.start_byte, Reverse(selection.end_byte)));
-    selections.dedup_by(|inner, outer| inner.end_byte <= outer.end_byte);
-    selections
+    let mut merged: Vec<Selection> = Vec::new();
+    for selection in selections {
+        if let Some(previous) = merged.last_mut() {
+            if selection.end_byte <= previous.end_byte {
+                continue;
+            }
+            if selection.start_byte < previous.end_byte
+                && selection.signature == previous.signature
+                && estimate_token_count(&source[previous.start_byte..selection.end_byte])
+                    <= BUDGET_TOKENS
+            {
+                previous.end_byte = selection.end_byte;
+                continue;
+            }
+        }
+        merged.push(selection);
+    }
+    merged
 }
 
 impl Selection {

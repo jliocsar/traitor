@@ -279,3 +279,16 @@ fn a_window_on_a_units_last_line_does_not_repeat_the_unit() {
             .all(|pair| pair[0].last_line <= pair[1].first_line)
     );
 }
+
+#[test]
+fn a_fragment_around_a_parsed_block_is_one_snippet() {
+    let source = "      'Program:exit'(program) {\n        let highest = -1\n        for (const statement of program.body) {\n          highest = Math.max(highest, rank(statement))\n        }\n      },\n";
+    let snippets = snippets_for_changes("src/rule.ts", source, &[Change::WHOLE_FILE]);
+    assert_eq!(
+        snippets
+            .iter()
+            .map(|snippet| (snippet.first_line, snippet.last_line))
+            .collect::<Vec<_>>(),
+        vec![(1, 6)]
+    );
+}
