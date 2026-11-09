@@ -6,6 +6,7 @@ use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
+use crate::judge::JudgingError;
 use crate::verdict::{Answer, Probabilities};
 
 const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators, not a reassigned let.\npaths:\n  - \"src/**/*.ts\"\n---\n";
@@ -212,7 +213,12 @@ fn an_offline_judge_cannot_check() {
         &judge,
         &VerdictCache::at(cache.path().to_path_buf()),
     ));
-    assert!(matches!(result, Err(CheckError::Judge { .. })));
+    assert!(matches!(
+        result,
+        Err(CheckError::Judging {
+            source: JudgingError::Judge { .. }
+        })
+    ));
 }
 
 #[test]
