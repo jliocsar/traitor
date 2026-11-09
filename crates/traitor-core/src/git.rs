@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 
 use snafu::{ResultExt, Snafu};
 
-pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 #[derive(Debug, Snafu)]
 pub enum GitError {
@@ -19,47 +19,50 @@ pub enum GitError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LineRange {
-    pub first: usize,
-    pub last: usize,
+pub(crate) struct LineRange {
+    pub(crate) first: usize,
+    pub(crate) last: usize,
 }
 
 impl LineRange {
-    pub const WHOLE_FILE: Self = Self {
+    pub(crate) const WHOLE_FILE: Self = Self {
         first: 1,
         last: usize::MAX,
     };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChangedFile {
-    pub path: String,
-    pub changes: Vec<LineRange>,
+pub(crate) struct ChangedFile {
+    pub(crate) path: String,
+    pub(crate) changes: Vec<LineRange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Comparison {
-    pub base: String,
-    pub head: Option<String>,
+pub(crate) struct Comparison {
+    base: String,
+    head: Option<String>,
 }
 
-pub struct Repository {
+pub(crate) struct Repository {
     root: PathBuf,
 }
 
 impl Repository {
-    pub fn discover(directory: &Path) -> Result<Self, GitError> {
+    pub(crate) fn discover(directory: &Path) -> Result<Self, GitError> {
         let root = run_git(directory, &["rev-parse", "--show-toplevel"])?;
         Ok(Self {
             root: PathBuf::from(root.trim_end()),
         })
     }
 
-    pub fn root(&self) -> &Path {
+    pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 
-    pub fn resolve_comparison(&self, revision: Option<&str>) -> Result<Comparison, GitError> {
+    pub(crate) fn resolve_comparison(
+        &self,
+        revision: Option<&str>,
+    ) -> Result<Comparison, GitError> {
         let Some(revision) = revision else {
             return Ok(Comparison {
                 base: self.default_base(),
@@ -86,7 +89,10 @@ impl Repository {
         })
     }
 
-    pub fn changed_files(&self, comparison: &Comparison) -> Result<Vec<ChangedFile>, GitError> {
+    pub(crate) fn changed_files(
+        &self,
+        comparison: &Comparison,
+    ) -> Result<Vec<ChangedFile>, GitError> {
         let mut arguments = vec![
             "-c",
             "core.quotePath=false",
@@ -110,7 +116,11 @@ impl Repository {
         Ok(files)
     }
 
-    pub fn read_file(&self, comparison: &Comparison, path: &str) -> Result<String, GitError> {
+    pub(crate) fn read_file(
+        &self,
+        comparison: &Comparison,
+        path: &str,
+    ) -> Result<String, GitError> {
         match &comparison.head {
             Some(head) => self.git(&["show", &format!("{head}:{path}")]),
             None => std::fs::read(self.root.join(path))
@@ -176,11 +186,11 @@ fn run_git(directory: &Path, arguments: &[&str]) -> Result<String, GitError> {
 
 fn parse_diff(diff: &str) -> Vec<ChangedFile> {
     let mut files: Vec<ChangedFile> = Vec::new();
-    let mut previous = "";
+    let mut in_file_header = false;
     for line in diff.lines() {
-        if previous.starts_with("--- ")
-            && let Some(path) = line.strip_prefix("+++ b/")
-        {
+        if line.starts_with("diff --git ") {
+            in_file_header = true;
+        } else if in_file_header && let Some(path) = line.strip_prefix("+++ b/") {
             files.push(ChangedFile {
                 path: path.to_string(),
                 changes: Vec::new(),
@@ -188,9 +198,9 @@ fn parse_diff(diff: &str) -> Vec<ChangedFile> {
         } else if let Some(range) = line.strip_prefix("@@ ").and_then(parse_hunk_header)
             && let Some(file) = files.last_mut()
         {
+            in_file_header = false;
             file.changes.push(range);
         }
-        previous = line;
     }
     files.retain(|file| !file.changes.is_empty());
     files
@@ -217,6 +227,21 @@ fn parse_hunk_header(header: &str) -> Option<LineRange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_changed_line_that_looks_like_a_file_header_stays_in_its_hunk() {
+        let diff = "diff --git a/query.sql b/query.sql\nindex 1..2 100644\n--- a/query.sql\n+++ b/query.sql\n@@ -1 +1 @@\n--- old comment\n+++ b/not-a-file\n@@ -5 +5 @@\n-x\n+y\n";
+        assert_eq!(
+            parse_diff(diff),
+            vec![ChangedFile {
+                path: "query.sql".to_string(),
+                changes: vec![
+                    LineRange { first: 1, last: 1 },
+                    LineRange { first: 5, last: 5 },
+                ],
+            }]
+        );
+    }
 
     #[test]
     fn reads_added_ranges_from_a_zero_context_diff() {

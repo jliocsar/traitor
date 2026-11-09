@@ -24,8 +24,8 @@ pub enum TypeSafeError {
     Status { status: u16, body: String },
     #[snafu(display("couldn't read TypeSafe's answer: {source}"))]
     Decode { source: reqwest::Error },
-    #[snafu(display("TypeSafe answered without a verdict for {slug}"))]
-    MissingAnswer { slug: String },
+    #[snafu(display("couldn't set up an HTTP client for TypeSafe: {source}"))]
+    BuildClient { source: reqwest::Error },
 }
 
 pub struct TypeSafeJudge {
@@ -61,22 +61,16 @@ struct ChoiceAnswer {
 }
 
 impl TypeSafeJudge {
-    pub fn from_environment() -> Self {
-        Self::new(
-            std::env::var(API_KEY_VARIABLE)
-                .ok()
-                .filter(|key| !key.trim().is_empty()),
-        )
-    }
-
-    pub fn new(api_key: Option<String>) -> Self {
-        Self {
+    pub fn from_environment() -> Result<Self, TypeSafeError> {
+        Ok(Self {
             client: reqwest::Client::builder()
                 .timeout(REQUEST_TIMEOUT)
                 .build()
-                .unwrap_or_default(),
-            api_key,
-        }
+                .context(BuildClientSnafu)?,
+            api_key: std::env::var(API_KEY_VARIABLE)
+                .ok()
+                .filter(|key| !key.trim().is_empty()),
+        })
     }
 }
 
@@ -109,7 +103,7 @@ impl Judge for TypeSafeJudge {
             .fail();
         }
         let decoded: SystemOneResponse = response.json().await.context(DecodeSnafu)?;
-        verdicts(request, decoded)
+        Ok(verdicts(decoded))
     }
 }
 
@@ -132,27 +126,19 @@ fn request_body<'request>(request: &'request JudgeRequest<'request>) -> SystemOn
     }
 }
 
-fn verdicts(
-    request: &JudgeRequest<'_>,
-    mut response: SystemOneResponse,
-) -> Result<BTreeMap<String, Verdict>, TypeSafeError> {
-    request
-        .traits
-        .iter()
-        .map(|definition| &definition.slug)
-        .map(|slug| {
-            let answer = response
-                .answers
-                .remove(slug)
-                .context(MissingAnswerSnafu { slug })?;
-            Ok((
-                slug.clone(),
+fn verdicts(response: SystemOneResponse) -> BTreeMap<String, Verdict> {
+    response
+        .answers
+        .into_iter()
+        .map(|(slug, answer)| {
+            (
+                slug,
                 Verdict {
                     answer: answer.choice,
                     confidence: answer.confidence,
                     probabilities: answer.probabilities,
                 },
-            ))
+            )
         })
         .collect()
 }
@@ -198,8 +184,7 @@ mod tests {
             r#"{"model":"jev-1.14.0","usage":{},"answers":{"railway-not-guards":{"type":"choice","choice":"n/a","confidence":0.76,"probabilities":{"pass":0.1,"fail":0.01,"n/a":0.89,"unsure":0}}}}"#,
         )
         .unwrap();
-        let definition = definition();
-        let verdicts = verdicts(&request(&definition), response).unwrap();
+        let verdicts = verdicts(response);
         assert_eq!(verdicts["railway-not-guards"].answer, Answer::NotApplicable);
         assert_eq!(
             verdicts["railway-not-guards"].probabilities.not_applicable,

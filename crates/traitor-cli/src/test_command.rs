@@ -13,7 +13,7 @@ use crate::{CommandResult, Outcome};
 
 pub async fn run(traits: &[String]) -> CommandResult {
     let repository = ConfiguredRepository::open(&env::current_dir()?)?;
-    let judge = TypeSafeJudge::from_environment();
+    let judge = TypeSafeJudge::from_environment()?;
     let cache = VerdictCache::new(&JsonStore::in_user_cache_directory());
     let report = test_cases(&repository, traits, &judge, &cache).await?;
     print_case_report(&report);

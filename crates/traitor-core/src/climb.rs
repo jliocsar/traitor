@@ -4,9 +4,9 @@ use std::path::Path;
 use tree_sitter::{Node, Parser, Tree};
 
 use crate::git::LineRange;
-use crate::token::estimate_token_count;
 
 const BUDGET_TOKENS: usize = 1000;
+const BYTES_PER_TOKEN: usize = 3;
 const LINE_WINDOW: usize = 20;
 const FUNCTION_VALUE_KINDS: &[&str] = &[
     "arrow_function",
@@ -16,7 +16,7 @@ const FUNCTION_VALUE_KINDS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
+enum Language {
     TypeScript,
     Tsx,
     JavaScript,
@@ -44,7 +44,7 @@ struct Lines<'source> {
 }
 
 impl Language {
-    pub fn from_path(path: &str) -> Option<Self> {
+    fn from_path(path: &str) -> Option<Self> {
         match Path::new(path).extension()?.to_str()? {
             "ts" | "mts" | "cts" => Some(Self::TypeScript),
             "tsx" => Some(Self::Tsx),
@@ -54,7 +54,7 @@ impl Language {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    fn name(self) -> &'static str {
         match self {
             Self::TypeScript => "typescript",
             Self::Tsx => "tsx",
@@ -92,14 +92,18 @@ impl Language {
     }
 }
 
-pub fn language_name(path: &str) -> &str {
+pub(crate) fn language_name(path: &str) -> &str {
     Language::from_path(path)
         .map(Language::name)
         .or_else(|| Path::new(path).extension().and_then(OsStr::to_str))
         .unwrap_or("text")
 }
 
-pub fn snippets_for_changes(path: &str, source: &str, changes: &[LineRange]) -> Vec<Snippet> {
+pub(crate) fn snippets_for_changes(
+    path: &str,
+    source: &str,
+    changes: &[LineRange],
+) -> Vec<Snippet> {
     let lines = Lines::new(source);
     let parsed = Language::from_path(path)
         .and_then(|language| language.parse(source).map(|tree| (language, tree)));
@@ -177,6 +181,10 @@ fn largest_fitting<'tree>(
         node = node.parent()?;
     }
     best
+}
+
+fn estimate_token_count(text: &str) -> usize {
+    text.len().div_ceil(BYTES_PER_TOKEN)
 }
 
 fn fits(node: Node, source: &str) -> bool {

@@ -47,9 +47,9 @@ pub enum JudgingError {
 }
 
 #[derive(Debug, Clone)]
-pub struct Judged {
-    pub verdict: Verdict,
-    pub from_cache: bool,
+pub(crate) struct Judged {
+    pub(crate) verdict: Verdict,
+    pub(crate) from_cache: bool,
 }
 
 struct CachedQuestion {
@@ -57,7 +57,7 @@ struct CachedQuestion {
     verdict: Option<Verdict>,
 }
 
-pub async fn judge_through_cache<J: Judge>(
+pub(crate) async fn judge_through_cache<J: Judge>(
     judge: &J,
     cache: &VerdictCache,
     requests: &[JudgeRequest<'_>],

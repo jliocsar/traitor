@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use semver::Version;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::config::{CONFIG_PATH, Config, ConfigError};
@@ -70,7 +70,7 @@ pub struct Initialized {
     pub outcome: InitOutcome,
 }
 
-pub fn schema_url(version: &Version) -> String {
+fn schema_url(version: &Version) -> String {
     format!("{SCHEMA_URL_PREFIX}{version}{SCHEMA_URL_SUFFIX}")
 }
 
@@ -80,8 +80,14 @@ pub fn init(directory: &Path, binary_version: &Version) -> Result<Initialized, I
     let outcome = match fs::read(&path) {
         Ok(contents) => upgrade(&path, &contents, binary_version)?,
         Err(source) if source.kind() == ErrorKind::NotFound => {
-            let config = json!({ SCHEMA_KEY: schema_url(binary_version), "traits": {} });
-            write_config(&path, config.as_object().expect("json! of an object"))?;
+            let config = Map::from_iter([
+                (
+                    SCHEMA_KEY.to_string(),
+                    Value::String(schema_url(binary_version)),
+                ),
+                ("traits".to_string(), Value::Object(Map::new())),
+            ]);
+            write_config(&path, &config)?;
             InitOutcome::Created
         }
         Err(source) => return Err(InitError::ReadConfig { path, source }),

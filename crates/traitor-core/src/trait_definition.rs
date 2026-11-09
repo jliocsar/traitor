@@ -69,12 +69,12 @@ impl TraitDefinition {
         })
     }
 
-    pub fn applies_to(&self, path: &str) -> bool {
+    pub(crate) fn applies_to(&self, path: &str) -> bool {
         self.paths.is_match(path)
     }
 }
 
-pub fn load_trait_definitions(
+pub(crate) fn load_trait_definitions(
     repository_root: &Path,
 ) -> Result<Vec<TraitDefinition>, TraitDefinitionError> {
     let directory = repository_root.join(TRAITS_DIRECTORY);
