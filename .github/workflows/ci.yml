@@ -1,9 +1,17 @@
 name: ci
 
+# docs-only changes can't break the build, so they skip CI
 on:
   push:
     branches: [main]
+    paths-ignore: &docs
+      - README.md
+      - CONTEXT.md
+      - LICENSE
+      - docs/**
+      - .github/assets/**
   pull_request:
+    paths-ignore: *docs
 
 jobs:
   check:
