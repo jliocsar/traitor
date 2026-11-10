@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src=".github/assets/banner.svg" alt="traitor" width="100%">
+  <img src=".github/assets/traitor.svg" alt="traitor" width="100%">
 </h1>
 
 Checks changed code and docs against a repo's house rules that no linter can check, by asking [TypeSafe](https://typesafe.ai)'s Jev whether each changed piece holds each rule.
