@@ -2,16 +2,34 @@ use std::assert_matches;
 
 use super::*;
 
-const RAILWAY: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators.\npaths:\n  - \"src/**/*.ts\"\n---\n\nSome prose that isn't sent.\n\n## Pass\n\n```ts\nconst label = Option.map(name, toTitle)\n```\n\n## Fail\n\n````ts\nlet label = ''\n```\nnot a close\n```\n````\n\n```ts\nlet total = 0\n```\n";
+const RAILWAY: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths:\n  - \"src/**/*.ts\"\n---\n\nA computed value flows through combinators.\n\nAn early return that only narrows a type is fine.\n";
 
 #[test]
-fn reads_the_frontmatter_and_ignores_the_body() {
+fn the_body_is_what_the_trait_expects() {
     let definition =
         TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), RAILWAY).unwrap();
     assert_eq!(definition.title, "Railway, not guards");
     assert_eq!(
         definition.expect,
-        "A computed value flows through combinators."
+        "A computed value flows through combinators.\n\nAn early return that only narrows a type is fine."
+    );
+}
+
+#[test]
+fn a_blank_body_is_missing_what_the_trait_expects() {
+    let contents = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths: [\"src/**/*.ts\"]\n---\n\n  \n";
+    assert_matches!(
+        TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), contents),
+        Err(TraitDefinitionError::MissingExpect { .. })
+    );
+}
+
+#[test]
+fn expect_in_the_frontmatter_is_an_unknown_field() {
+    let contents = RAILWAY.replace("paths:", "expect: Combinators.\npaths:");
+    assert_matches!(
+        TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), &contents),
+        Err(TraitDefinitionError::InvalidFrontmatter { .. })
     );
 }
 

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
 use serde::Deserialize;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu, ensure};
 
 use crate::glob::{GlobError, compile_globs};
 
@@ -25,6 +25,8 @@ pub enum TraitDefinitionError {
     },
     #[snafu(display("{} needs YAML frontmatter between two --- lines", path.display()))]
     MissingFrontmatter { path: PathBuf },
+    #[snafu(display("{} needs what the trait expects in its body, below the frontmatter", path.display()))]
+    MissingExpect { path: PathBuf },
     #[snafu(display("{} has invalid frontmatter: {source}", path.display()))]
     InvalidFrontmatter {
         path: PathBuf,
@@ -50,20 +52,22 @@ pub struct TraitDefinition {
 struct Frontmatter {
     title: String,
     why: String,
-    expect: String,
     paths: Vec<String>,
 }
 
 impl TraitDefinition {
     pub fn parse(slug: &str, path: &Path, contents: &str) -> Result<Self, TraitDefinitionError> {
-        let frontmatter = split_frontmatter(contents).context(MissingFrontmatterSnafu { path })?;
+        let (frontmatter, body) =
+            split_frontmatter(contents).context(MissingFrontmatterSnafu { path })?;
         let frontmatter: Frontmatter =
             serde_saphyr::from_str(frontmatter).context(InvalidFrontmatterSnafu { path })?;
+        let expect = body.trim();
+        ensure!(!expect.is_empty(), MissingExpectSnafu { path });
         Ok(Self {
             slug: slug.to_string(),
             title: frontmatter.title,
             why: frontmatter.why,
-            expect: frontmatter.expect,
+            expect: expect.to_string(),
             paths: compile_globs(path, &frontmatter.paths)?,
             directory: path.parent().map(Path::to_path_buf).unwrap_or_default(),
         })
@@ -111,14 +115,15 @@ pub(crate) fn visible_entries(directory: &Path) -> io::Result<Vec<DirEntry>> {
     Ok(entries)
 }
 
-fn split_frontmatter(contents: &str) -> Option<&str> {
+/// The frontmatter and the body after it.
+fn split_frontmatter(contents: &str) -> Option<(&str, &str)> {
     let rest = contents
         .strip_prefix("---\n")
         .or_else(|| contents.strip_prefix("---\r\n"))?;
     let mut offset = 0;
     for line in rest.split_inclusive('\n') {
         if line.trim_end() == "---" {
-            return Some(&rest[..offset]);
+            return Some((&rest[..offset], &rest[offset + line.len()..]));
         }
         offset += line.len();
     }

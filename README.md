@@ -6,7 +6,7 @@ Every repo has rules no linter can check. "Errors say what to do next." "Docs us
 
 traitor checks your changed code and docs against those rules. It sends each changed piece, with the rules that apply to it, to [TypeSafe](https://typesafe.ai)'s Jev, and gets back a verdict for each: pass, fail, n/a or unsure, with how likely each one is.
 
-A rule is called a **trait**. It's a folder in `.agents/traits/` with a `TRAIT.md` saying what the rule expects, plus a few example snippets that hold it and break it.
+A rule is called a **trait**. It's a folder in `.agents/traits/` with a `TRAIT.md` that spells the rule out, plus a few example snippets that hold it and break it.
 
 ## Install
 
@@ -18,6 +18,10 @@ bun add --dev @jliocsar/traitor
 npm install --save-dev @jliocsar/traitor
 ```
 
+It's a dev dependency, so run it through your package manager: `npx traitor`, `bunx traitor` or `pnpm exec traitor`. The examples below just say `traitor`.
+
+For a one-off run outside a repo that has it, use `npx @jliocsar/traitor`. Plain `npx traitor` there would fetch a different npm package that happens to be called `traitor`.
+
 No `package.json`? Each GitHub release also has the binaries.
 
 ## Usage
@@ -26,7 +30,7 @@ No `package.json`? Each GitHub release also has the binaries.
 
 ```sh
 export TYPESAFE_API_KEY=...
-npx traitor init
+traitor init
 ```
 
 This writes `.agents/traitor.json`. Running `init` is how a repo agrees to send its code to TypeSafe, since every `check` and `test` sends snippets there. Commit the file so everyone on the repo can see that choice.
@@ -50,27 +54,29 @@ Say your team keeps asking for combinators instead of if-guards. Make a folder f
 ---
 title: "Railway, not guards"
 why: "A ladder of guards feeding a mutable variable hides how a value flows."
-expect: "A computed value flows through Option, Result or Effect combinators. Code breaks this when if-guards and loops reassign a let to build the value. An early return that only narrows a type is fine."
 paths:
   - "src/**/*.ts"
 ---
 
-Anything down here is for people. It's never sent.
+A computed value flows through Option, Result or Effect combinators.
+Code breaks this when if-guards and loops reassign a `let` to build the value.
+An early return that only narrows a type is fine.
 ```
 
-The four fields:
+The frontmatter on top:
 
 - **title**: the name people see.
 - **why**: why the rule exists. It shows up in every failure.
-- **expect**: what Jev actually judges against. Say what good code looks like, what breaks the rule, and any exceptions.
 - **paths**: which files the rule covers. `*` stays inside a folder and `**` goes through them.
 
-The `pass/` and `fail/` folders hold small examples, one snippet per file. They test the wording of `expect`.
+The body is the rule itself, and it's exactly what Jev judges against. Say what good code looks like, what breaks the rule, and any exceptions. Keep it to the rule: the whole body is sent, so notes and links go in `why` instead.
+
+The `pass/` and `fail/` folders hold small examples, one snippet per file. They test the rule's wording.
 
 ### 3. Test the wording
 
 ```sh
-npx traitor test railway-not-guards
+traitor test railway-not-guards
 ```
 
 ```
@@ -82,16 +88,16 @@ railway-not-guards: p(fail) on fail cases 0.93 to 0.93, on pass cases 0.04 to 0.
 2 of 2 cases got the verdict their folder names, 0 from the cache.
 ```
 
-A `MISS` means the trait's wording is off. Reword `expect` and test again. Don't move the example to make it pass.
+A `MISS` means the trait's wording is off. Reword the body and test again. Don't move the example to make it pass.
 
 Run `traitor test` with no name to test every trait.
 
 ### 4. Check your changes
 
 ```sh
-npx traitor check               # everything you haven't pushed yet
-npx traitor check main          # everything since main
-npx traitor check HEAD~3..HEAD  # what changed between two commits
+traitor check               # everything you haven't pushed yet
+traitor check main          # everything since main
+traitor check HEAD~3..HEAD  # what changed between two commits
 ```
 
 ```

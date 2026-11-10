@@ -7,7 +7,7 @@ description: Write and test traitor traits, the house rules in a repo's .agents/
 
 A trait is a house rule no linter can check, kept as one folder in `.agents/traits/<slug>/`. traitor sends each changed snippet of code or prose to TypeSafe's Jev, with each trait whose `paths` match its file, and gets back a verdict: pass, fail, n/a (the snippet has nothing the trait is about) or unsure, each with a probability.
 
-Run traitor the way the repo pins it: `bunx traitor` or `npx traitor` when it's in the repo's `devDependencies`, plain `traitor` otherwise. It reads `TYPESAFE_API_KEY` from the environment. `traitor check` judges everything unpushed.
+Run traitor the way the repo pins it: `bunx traitor` or `npx traitor` when it's in the repo's `devDependencies`, plain `traitor` otherwise. Never run `npx traitor` in a repo that doesn't have it installed: npx would fetch an unrelated npm package named `traitor`. Use `npx @jliocsar/traitor` there. It reads `TYPESAFE_API_KEY` from the environment. `traitor check` judges everything unpushed.
 
 ## When the Stop hook blocks the turn
 
@@ -29,30 +29,30 @@ The person approves a trait by reviewing and committing it like any other change
 
 ## TRAIT.md
 
-The folder name is the slug: lowercase kebab-case, naming the rule, such as `railway-not-guards`. `TRAIT.md` is YAML frontmatter with exactly these four fields, then an optional body:
+The folder name is the slug: lowercase kebab-case, naming the rule, such as `railway-not-guards`. `TRAIT.md` is YAML frontmatter with exactly these three fields, then the body, which is what the trait expects:
 
 ```markdown
 ---
 title: "Railway, not guards"
 why: "A ladder of guards feeding a mutable variable hides how a value flows. A chain of combinators shows the flow and short-circuits on failure."
-expect: "A computed value flows through Option, Result or Effect combinators. Code breaks this when if-guards and loops reassign a let or push into a mutable accumulator to build the value. An early return that only narrows a type is fine."
 paths:
   - "src/**/*.ts"
 ---
 
-The reasoning, links and history, for people.
+A computed value flows through Option, Result or Effect combinators. Code breaks this when if-guards and loops reassign a let or push into a mutable accumulator to build the value. An early return that only narrows a type is fine.
 ```
 
 - `title`: the name people see.
 - `why`: why the rule exists. It goes into the failure message, and Jev reads it too.
-- `expect`: the one statement Jev judges against. Nothing else in the file counts. Say what code holding the trait looks like, then what breaks it, and write the exceptions in. Name what the trait is about clearly enough that code with nothing of the kind gets n/a rather than a guess.
 - `paths`: globs from the repo root, where `*` stops at a slash and `**` crosses them. A trait is never asked about a file its globs don't match.
 
-The body is never sent.
+The body is the `expect`: the one statement Jev judges against. Say what code holding the trait looks like, then what breaks it, and write the exceptions in. Name what the trait is about clearly enough that code with nothing of the kind gets n/a rather than a guess.
+
+The whole body is sent, so put nothing else there: no notes, links or history. The reasoning goes in `why`.
 
 ## Cases
 
-Cases test the wording of `expect`. Each is one snippet in its own file, judged whole:
+Cases test the wording of the body. Each is one snippet in its own file, judged whole:
 
 - `pass/`: snippets that hold the trait. n/a counts as holding too, since it fails nothing.
 - `fail/`: snippets that break it.
@@ -61,7 +61,7 @@ Take them from the correction just made: the code before the fix is a fail case 
 
 Then run `traitor test <slug>` and show the person its output. It prints each case's verdict and p(fail), then the p(fail) range over each folder. Testing sends the cases to TypeSafe, like a check does.
 
-When a case misses, the wording of `expect` is what's wrong: reword it and test again. Never edit or move a case to make it hold. If a case looks like it's in the wrong folder, ask the person.
+When a case misses, the wording of the body is what's wrong: reword it and test again. Never edit or move a case to make it hold. If a case looks like it's in the wrong folder, ask the person.
 
 ## Thresholds
 

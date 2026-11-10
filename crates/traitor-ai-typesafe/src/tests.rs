@@ -8,7 +8,7 @@ fn definition() -> TraitDefinition {
     TraitDefinition::parse(
         "railway-not-guards",
         Path::new("TRAIT.md"),
-        "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators.\npaths: [\"src/**/*.ts\"]\n---\n## Fail\n```ts\nlet total = 0\n```\n",
+        "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths: [\"src/**/*.ts\"]\n---\nA computed value flows through combinators.\n",
     )
     .unwrap()
 }

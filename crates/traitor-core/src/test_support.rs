@@ -12,7 +12,7 @@ use crate::judge::{Judge, JudgeRequest};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::{Answer, Probabilities, Verdict};
 
-pub const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\nexpect: A computed value flows through combinators, not a reassigned let.\npaths:\n  - \"src/**/*.ts\"\n---\n";
+pub const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths:\n  - \"src/**/*.ts\"\n---\n\nA computed value flows through combinators, not a reassigned let.\n";
 
 #[derive(Debug, Snafu)]
 #[snafu(display("offline"))]
