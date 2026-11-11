@@ -162,6 +162,23 @@ The plugin adds two things:
 - **A `traits` skill.** When you correct Claude in a way that sounds like a house rule, it offers to write a trait for it. It writes the trait once you agree, then tests it.
 - **A Stop hook.** When Claude finishes a turn, the hook runs `traitor check`. If a trait over its threshold fails, Claude goes back and fixes it.
 
+## Inspired by crosshatch/traits
+
+traitor wouldn't exist without [crosshatch/traits](https://github.com/crosshatch/traits). It had the idea first: house rules as Markdown files in `.agents/traits/`, judged by a decision model like Jev. traitor borrows that idea and the way it asks Jev each question, then goes its own way:
+
+| | crosshatch/traits | traitor |
+|---|---|---|
+| **How it runs** | Your agent calls an MCP tool | A CLI you, a Stop hook or CI can run |
+| **What it judges** | Whole files, in chunks | Only what changed, grown to the whole function, block or doc section |
+| **A trait is** | One file: `name`, `subject`, `requirement`, `purpose` | A folder: `TRAIT.md` (`title`, `why`, `paths`, and the rule as its body) plus `pass/` and `fail/` examples |
+| **Testing a rule's wording** | n/a | `traitor test` runs the examples |
+| **Failing a build** | n/a | A threshold per trait, and exit code `1` |
+| **New traits** | Proposed and approved through MCP, with a language model that splits and merges them | Plain files, reviewed and committed like any other change |
+| **Models** | Your pick of providers, OpenRouter by default | TypeSafe's Jev |
+| **Setup** | Your agent follows a setup guide: `traits.ts`, Effect packages, a SQLite database | `traitor init` writes one JSON file |
+
+If you'd rather your agent check its own work as it goes, without a CLI or CI, crosshatch/traits is a great fit.
+
 ## Docs
 
 - `CONTEXT.md` is the glossary.
