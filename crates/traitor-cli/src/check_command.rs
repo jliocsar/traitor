@@ -51,6 +51,12 @@ fn print_report(report: &Report) {
         count(Answer::Fail),
         count(Answer::Unsure),
     );
+    if !report.non_utf8_paths.is_empty() {
+        println!(
+            "Skipped these changed paths, which aren't valid UTF-8: {}.",
+            report.non_utf8_paths.join(", ")
+        );
+    }
     if report.fails_are_only_reported() {
         println!(
             "No failing trait has a threshold in {CONFIG_PATH}, so its fails are reported and don't fail the check."

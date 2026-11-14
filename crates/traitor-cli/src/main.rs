@@ -7,6 +7,7 @@ use std::error::Error;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use traitor_core::error_chain;
 
 const EXIT_TRAIT_BROKEN: u8 = 1;
 const EXIT_COULD_NOT_RUN: u8 = 2;
@@ -68,7 +69,7 @@ async fn main() -> ExitCode {
         Ok(Outcome::Success) => ExitCode::SUCCESS,
         Ok(Outcome::TraitBroken) => ExitCode::from(EXIT_TRAIT_BROKEN),
         Err(error) => {
-            eprintln!("traitor couldn't {activity}: {error}");
+            eprintln!("traitor couldn't {activity}: {}", error_chain(&*error));
             ExitCode::from(EXIT_COULD_NOT_RUN)
         }
     }

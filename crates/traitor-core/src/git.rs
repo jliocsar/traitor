@@ -44,6 +44,20 @@ pub(crate) struct ChangedFile {
     pub(crate) changes: Vec<Change>,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ChangedFiles {
+    pub(crate) files: Vec<ChangedFile>,
+    /// Changed paths that aren't valid UTF-8, shown as near as they can be. They aren't judged.
+    pub(crate) non_utf8_paths: Vec<String>,
+}
+
+impl ChangedFiles {
+    fn extend(&mut self, other: Self) {
+        self.files.extend(other.files);
+        self.non_utf8_paths.extend(other.non_utf8_paths);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Comparison {
     base: String,
@@ -79,7 +93,7 @@ impl Repository {
         };
         if let Some((from, to)) = revision.split_once("...") {
             let to = or_head(to);
-            let base = self.git(&["merge-base", or_head(from), to])?;
+            let base = self.git(&["merge-base", "--end-of-options", or_head(from), to])?;
             return Ok(Comparison {
                 base: base.trim_end().to_string(),
                 head: Some(to.to_string()),
@@ -97,13 +111,12 @@ impl Repository {
         })
     }
 
-    pub(crate) fn changed_files(
-        &self,
-        comparison: &Comparison,
-    ) -> Result<Vec<ChangedFile>, GitError> {
+    pub(crate) fn changed_files(&self, comparison: &Comparison) -> Result<ChangedFiles, GitError> {
+        // Quoting keeps every header ASCII, so a path that isn't UTF-8 survives as octal escapes
+        // instead of being mangled along with the rest of the diff's text.
         let mut arguments = vec![
             "-c",
-            "core.quotePath=false",
+            "core.quotePath=true",
             "diff",
             "--no-color",
             "--no-ext-diff",
@@ -112,16 +125,19 @@ impl Repository {
             "--diff-filter=d",
             "--src-prefix=a/",
             "--dst-prefix=b/",
+            "--end-of-options",
             &comparison.base,
         ];
         arguments.extend(comparison.head.as_deref());
         arguments.push("--");
-        let mut files = parse_diff(&self.git(&arguments)?);
+        let mut changed = parse_diff(&self.git(&arguments)?);
         if comparison.head.is_none() {
-            files.extend(self.untracked_files()?);
+            changed.extend(self.untracked_files()?);
         }
-        files.sort_by(|left, right| left.path.cmp(&right.path));
-        Ok(files)
+        changed
+            .files
+            .sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(changed)
     }
 
     pub(crate) fn read_file(
@@ -130,7 +146,7 @@ impl Repository {
         path: &str,
     ) -> Result<Option<String>, GitError> {
         let text = match &comparison.head {
-            Some(head) => self.git(&["show", &format!("{head}:{path}")])?,
+            Some(head) => self.git(&["show", "--end-of-options", &format!("{head}:{path}")])?,
             None => std::fs::read(self.root.join(path))
                 .map(text_from_bytes)
                 .context(ReadWorkingTreeSnafu { path })?,
@@ -150,16 +166,27 @@ impl Repository {
             .to_string()
     }
 
-    fn untracked_files(&self) -> Result<Vec<ChangedFile>, GitError> {
-        let listing = self.git(&["ls-files", "--others", "--exclude-standard", "-z"])?;
-        Ok(listing
-            .split('\0')
+    fn untracked_files(&self) -> Result<ChangedFiles, GitError> {
+        let listing = run_git_bytes(
+            &self.root,
+            &["ls-files", "--others", "--exclude-standard", "-z"],
+        )?;
+        let (paths, non_utf8_paths): (Vec<_>, Vec<_>) = listing
+            .split(|byte| *byte == 0)
             .filter(|path| !path.is_empty())
-            .map(|path| ChangedFile {
-                path: path.to_string(),
-                changes: vec![Change::WHOLE_FILE],
-            })
-            .collect())
+            .map(|path| utf8_path(path.to_vec()))
+            .partition(Result::is_ok);
+        Ok(ChangedFiles {
+            files: paths
+                .into_iter()
+                .flatten()
+                .map(|path| ChangedFile {
+                    path,
+                    changes: vec![Change::WHOLE_FILE],
+                })
+                .collect(),
+            non_utf8_paths: non_utf8_paths.into_iter().filter_map(Result::err).collect(),
+        })
     }
 
     fn git(&self, arguments: &[&str]) -> Result<String, GitError> {
@@ -176,6 +203,10 @@ fn or_head(revision: &str) -> &str {
 }
 
 fn run_git(directory: &Path, arguments: &[&str]) -> Result<String, GitError> {
+    run_git_bytes(directory, arguments).map(text_from_bytes)
+}
+
+fn run_git_bytes(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitError> {
     let output = Command::new("git")
         .arg("-C")
         .arg(directory)
@@ -190,7 +221,12 @@ fn run_git(directory: &Path, arguments: &[&str]) -> Result<String, GitError> {
         }
         .fail();
     }
-    Ok(text_from_bytes(output.stdout))
+    Ok(output.stdout)
+}
+
+/// The path, or when it isn't valid UTF-8, the nearest it can be shown as.
+fn utf8_path(bytes: Vec<u8>) -> Result<String, String> {
+    String::from_utf8(bytes).map_err(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
 }
 
 fn text_from_bytes(bytes: Vec<u8>) -> String {
@@ -205,19 +241,26 @@ fn looks_binary(text: &str) -> bool {
         .any(|byte| *byte == 0)
 }
 
-fn parse_diff(diff: &str) -> Vec<ChangedFile> {
-    let mut files: Vec<ChangedFile> = Vec::new();
+fn parse_diff(diff: &str) -> ChangedFiles {
+    let mut changed = ChangedFiles::default();
     let mut current: Option<ChangedFile> = None;
     let mut in_file_header = false;
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
-            files.extend(current.take());
+            changed.files.extend(current.take());
             in_file_header = true;
         } else if in_file_header && let Some(path) = line.strip_prefix("+++ ") {
-            current = new_path(path).map(|path| ChangedFile {
-                path,
-                changes: Vec::new(),
-            });
+            current = match new_path(path) {
+                Some(Ok(path)) => Some(ChangedFile {
+                    path,
+                    changes: Vec::new(),
+                }),
+                Some(Err(shown)) => {
+                    changed.non_utf8_paths.push(shown);
+                    None
+                }
+                None => None,
+            };
         } else if let Some(header) = line.strip_prefix("@@ ") {
             in_file_header = false;
             if let Some(file) = current.as_mut()
@@ -227,22 +270,25 @@ fn parse_diff(diff: &str) -> Vec<ChangedFile> {
             }
         }
     }
-    files.extend(current);
-    files.retain(|file| !file.changes.is_empty());
-    files
+    changed.files.extend(current);
+    changed.files.retain(|file| !file.changes.is_empty());
+    changed
 }
 
-fn new_path(header_path: &str) -> Option<String> {
+/// The path in a `+++` header: none when the header can't be read, and an error with the
+/// nearest it can be shown as when the path isn't valid UTF-8.
+fn new_path(header_path: &str) -> Option<Result<String, String>> {
     let header_path = header_path.strip_suffix('\t').unwrap_or(header_path);
-    let path = if header_path.starts_with('"') {
+    let bytes = if header_path.starts_with('"') {
         unquote(header_path)?
     } else {
-        header_path.to_string()
+        header_path.as_bytes().to_vec()
     };
-    path.strip_prefix("b/").map(str::to_string)
+    let path = bytes.strip_prefix(b"b/")?;
+    Some(utf8_path(path.to_vec()))
 }
 
-fn unquote(quoted: &str) -> Option<String> {
+fn unquote(quoted: &str) -> Option<Vec<u8>> {
     let mut escaped = quoted.strip_prefix('"')?.strip_suffix('"')?.bytes();
     let mut bytes = Vec::new();
     while let Some(byte) = escaped.next() {
@@ -259,14 +305,18 @@ fn unquote(quoted: &str) -> Option<String> {
             b'f' => 0x0c,
             b'r' => b'\r',
             high @ b'0'..=b'3' => {
-                let middle = escaped.next().filter(u8::is_ascii_digit)?;
-                let low = escaped.next().filter(u8::is_ascii_digit)?;
+                let middle = escaped.next().filter(|byte| is_octal_digit(*byte))?;
+                let low = escaped.next().filter(|byte| is_octal_digit(*byte))?;
                 (high - b'0') * 64 + (middle - b'0') * 8 + (low - b'0')
             }
             other => other,
         });
     }
-    Some(text_from_bytes(bytes))
+    Some(bytes)
+}
+
+fn is_octal_digit(byte: u8) -> bool {
+    matches!(byte, b'0'..=b'7')
 }
 
 fn parse_hunk_header(header: &str) -> Option<Change> {

@@ -32,6 +32,7 @@ fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
     Report {
         snippet_count: findings.len(),
         findings,
+        non_utf8_paths: Vec::new(),
     }
 }
 
@@ -233,4 +234,27 @@ fn a_repo_with_traits_but_no_config_says_why_it_couldnt_check() {
             .unwrap()
             .starts_with("traitor couldn't check: ")
     );
+}
+
+#[test]
+fn git_that_wont_run_is_reported_not_taken_for_no_repository() {
+    let missing_git = GitError::Spawn {
+        source: std::io::Error::from(std::io::ErrorKind::NotFound),
+    };
+    assert!(matches!(
+        repository_with_traits(Err(missing_git)),
+        Err(GitError::Spawn { .. })
+    ));
+}
+
+#[test]
+fn a_directory_outside_any_repository_gets_an_empty_answer() {
+    let not_a_repository = GitError::Failed {
+        arguments: "rev-parse --show-toplevel".to_string(),
+        stderr: "fatal: not a git repository".to_string(),
+    };
+    assert!(matches!(
+        repository_with_traits(Err(not_a_repository)),
+        Ok(None)
+    ));
 }
