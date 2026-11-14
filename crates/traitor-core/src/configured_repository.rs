@@ -34,7 +34,15 @@ impl ConfiguredRepository {
         Self::load(Repository::discover(directory)?)
     }
 
-    pub(crate) fn load(git: Repository) -> Result<Self, OpenError> {
+    /// The repository at `directory`, or none when it isn't in a git repository or has no
+    /// traits. Git failing to run at all is an error, not "no repository".
+    pub fn open_if_it_has_traits(directory: &Path) -> Result<Option<Self>, OpenError> {
+        repository_with_traits(Repository::discover(directory))?
+            .map(Self::load)
+            .transpose()
+    }
+
+    fn load(git: Repository) -> Result<Self, OpenError> {
         let config = Config::load(git.root())?;
         let definitions = load_trait_definitions(git.root())?;
         let repository = Self {
@@ -79,3 +87,16 @@ impl ConfiguredRepository {
         self.config.threshold(&definition.slug)
     }
 }
+
+fn repository_with_traits(
+    discovered: Result<Repository, GitError>,
+) -> Result<Option<Repository>, GitError> {
+    match discovered {
+        Ok(git) => Ok(git.root().join(TRAITS_DIRECTORY).is_dir().then_some(git)),
+        Err(GitError::Failed { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests;

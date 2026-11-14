@@ -1,13 +1,15 @@
 mod check_command;
+mod error;
 mod init_command;
+mod session;
 mod stop_hook_command;
 mod test_command;
 
-use std::error::Error;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use traitor_core::error_chain;
+
+use crate::error::{CliError, error_chain};
 
 const EXIT_TRAIT_BROKEN: u8 = 1;
 const EXIT_COULD_NOT_RUN: u8 = 2;
@@ -49,7 +51,7 @@ enum Outcome {
     TraitBroken,
 }
 
-type CommandResult = Result<Outcome, Box<dyn Error>>;
+type CommandResult = Result<Outcome, CliError>;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -69,7 +71,7 @@ async fn main() -> ExitCode {
         Ok(Outcome::Success) => ExitCode::SUCCESS,
         Ok(Outcome::TraitBroken) => ExitCode::from(EXIT_TRAIT_BROKEN),
         Err(error) => {
-            eprintln!("traitor couldn't {activity}: {}", error_chain(&*error));
+            eprintln!("traitor couldn't {activity}: {}", error_chain(&error));
             ExitCode::from(EXIT_COULD_NOT_RUN)
         }
     }

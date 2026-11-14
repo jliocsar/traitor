@@ -1,16 +1,21 @@
 use std::env;
 
 use semver::Version;
+use snafu::ResultExt;
 use traitor_ai_typesafe::API_HOST;
 use traitor_core::config::CONFIG_PATH;
 use traitor_core::init::{InitOutcome, init};
 use traitor_core::trait_definition::{TRAIT_FILE, TRAITS_DIRECTORY};
 
+use crate::error::{CurrentDirectorySnafu, OwnVersionSnafu};
 use crate::{CommandResult, Outcome};
 
 pub fn run() -> CommandResult {
-    let version = Version::parse(env!("CARGO_PKG_VERSION"))?;
-    match init(&env::current_dir()?, &version)? {
+    let version = Version::parse(env!("CARGO_PKG_VERSION")).context(OwnVersionSnafu)?;
+    match init(
+        &env::current_dir().context(CurrentDirectorySnafu)?,
+        &version,
+    )? {
         InitOutcome::Created => {
             println!("Wrote {CONFIG_PATH}.");
             println!();

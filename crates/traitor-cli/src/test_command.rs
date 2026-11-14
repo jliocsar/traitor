@@ -1,22 +1,17 @@
 use std::collections::BTreeMap;
-use std::env;
 
-use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::case::{
     CaseReport, CaseResult, FAIL_CASES_DIRECTORY, PASS_CASES_DIRECTORY, test_cases,
 };
-use traitor_core::configured_repository::ConfiguredRepository;
-use traitor_core::store::JsonStore;
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 use traitor_core::verdict::Answer;
 
+use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
 pub async fn run(traits: &[String]) -> CommandResult {
-    let repository = ConfiguredRepository::open(&env::current_dir()?)?;
-    let judge = TypeSafeJudge::from_environment()?;
-    let store = JsonStore::in_user_cache_directory();
-    let report = test_cases(&repository, traits, &judge, &store).await?;
+    let session = Session::in_current_directory()?;
+    let report = test_cases(&session.repository, traits, &session.judge, &session.store).await?;
     print_case_report(&report);
     Ok(if report.all_hold() {
         Outcome::Success

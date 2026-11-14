@@ -1,19 +1,21 @@
 use std::env;
 
-use traitor_ai_typesafe::TypeSafeJudge;
 use traitor_core::check::{Finding, Report, check};
 use traitor_core::config::CONFIG_PATH;
-use traitor_core::configured_repository::ConfiguredRepository;
-use traitor_core::store::JsonStore;
 use traitor_core::verdict::Answer;
 
+use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
 pub async fn run(revision: Option<&str>) -> CommandResult {
-    let repository = ConfiguredRepository::open(&env::current_dir()?)?;
-    let judge = TypeSafeJudge::from_environment()?;
-    let store = JsonStore::in_user_cache_directory();
-    let report = check(&repository, revision, &judge, &store).await?;
+    let session = Session::in_current_directory()?;
+    let report = check(
+        &session.repository,
+        revision,
+        &session.judge,
+        &session.store,
+    )
+    .await?;
     print_report(&report);
     Ok(if report.fails_check() {
         Outcome::TraitBroken
