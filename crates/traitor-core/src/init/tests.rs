@@ -1,3 +1,5 @@
+//! Tests for creating and upgrading a repo's config.
+
 use std::assert_matches;
 
 use super::*;
@@ -27,11 +29,13 @@ fn read(directory: &Path) -> String {
 fn creates_a_config_pinned_to_the_binary() {
     let directory = repository();
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+
     assert_eq!(outcome, InitOutcome::Created);
     assert_eq!(
         read(directory.path()),
         "{\n  \"$schema\": \"https://raw.githubusercontent.com/jliocsar/traitor/v0.3.0/schema/traitor.schema.json\",\n  \"traits\": {}\n}\n"
     );
+
     Config::load(directory.path()).unwrap();
 }
 
@@ -40,6 +44,7 @@ fn writes_at_the_repository_root_from_a_subdirectory() {
     let directory = repository();
     fs::create_dir_all(directory.path().join("src/deep")).unwrap();
     init(&directory.path().join("src/deep"), &version("0.3.0")).unwrap();
+
     assert!(directory.path().join(CONFIG_PATH).is_file());
 }
 
@@ -54,13 +59,16 @@ fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
         ),
     );
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+
     assert_eq!(
         outcome,
         InitOutcome::Upgraded {
             from: version("0.2.1")
         }
     );
+
     let contents = read(directory.path());
+
     assert!(contents.contains("/v0.3.0/"));
     assert!(contents.find("zeta").unwrap() < contents.find("alpha").unwrap());
 }
@@ -70,6 +78,7 @@ fn adds_a_missing_schema_first() {
     let directory = repository();
     write(directory.path(), "{\"traits\":{}}");
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+
     assert_eq!(outcome, InitOutcome::AddedSchema);
     assert!(read(directory.path()).starts_with("{\n  \"$schema\": "));
 }
@@ -83,6 +92,7 @@ fn leaves_a_current_config_untouched() {
     );
     write(directory.path(), &contents);
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
+
     assert_eq!(outcome, InitOutcome::AlreadyCurrent);
     assert_eq!(read(directory.path()), contents);
 }
@@ -94,6 +104,7 @@ fn refuses_a_config_newer_than_the_binary() {
         directory.path(),
         &format!("{{\"$schema\":\"{}\"}}", schema_url(&version("0.4.0"))),
     );
+
     assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::NewerThanBinary { .. })
@@ -104,6 +115,7 @@ fn refuses_a_config_newer_than_the_binary() {
 fn refuses_a_schema_that_isnt_traitors() {
     let directory = repository();
     write(directory.path(), "{\"$schema\":\"./schema.json\"}");
+
     assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::UnrecognizedSchema { .. })
@@ -118,6 +130,7 @@ fn refuses_to_write_an_upgrade_that_wouldnt_load() {
         schema_url(&version("0.2.0"))
     );
     write(directory.path(), &contents);
+
     assert_matches!(
         init(directory.path(), &version("0.3.0")),
         Err(InitError::Config {

@@ -1,3 +1,5 @@
+//! Tests for judging a trait's cases.
+
 use std::assert_matches;
 use std::fs;
 
@@ -20,8 +22,8 @@ fn run<'repository>(
     repository: &'repository ConfiguredRepository,
     slugs: &[String],
     judge: &FakeJudge,
+    cache: &TempDir,
 ) -> Result<CaseReport<'repository>, CaseError> {
-    let cache = TempDir::new().unwrap();
     block_on(test_cases(
         repository,
         slugs,
@@ -44,7 +46,9 @@ fn each_case_is_judged_against_the_verdict_its_folder_names() {
     write_case(root, "fail", "looks-fine.ts", "const total = sum(items)\n");
     write_case(root, "fail", ".DS_Store", "");
     let repository = ConfiguredRepository::open(root).unwrap();
-    let report = run(&repository, &[], &FakeJudge::new()).unwrap();
+    let cache = TempDir::new().unwrap();
+    let report = run(&repository, &[], &FakeJudge::new(), &cache).unwrap();
+
     assert_eq!(
         report
             .results
@@ -75,6 +79,7 @@ fn a_pass_case_also_holds_on_n_a() {
         verdict,
         from_cache: false,
     };
+
     assert!(result(Answer::Pass, not_applicable.clone()).holds());
     assert!(!result(Answer::Fail, not_applicable).holds());
 }
@@ -90,17 +95,21 @@ fn the_judge_never_sees_the_folder_or_file_name() {
     );
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
     let judge = FakeJudge::new();
-    run(&repository, &[], &judge).unwrap();
+    let cache = TempDir::new().unwrap();
+    run(&repository, &[], &judge, &cache).unwrap();
     let states = judge.states.borrow();
-    assert_eq!(states[0]["path"], "case.ts");
-    assert_eq!(states[0]["language"], "typescript");
+
+    assert_eq!(states[0].path, "case.ts");
+    assert_eq!(states[0].language, "typescript");
 }
 
 #[test]
 fn a_trait_without_cases_is_named() {
     let directory = repository_with_trait("{}");
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
-    let report = run(&repository, &[], &FakeJudge::new()).unwrap();
+    let cache = TempDir::new().unwrap();
+    let report = run(&repository, &[], &FakeJudge::new(), &cache).unwrap();
+
     assert!(report.results.is_empty());
     assert_eq!(report.traits_without_cases, vec!["railway-not-guards"]);
 }
@@ -109,8 +118,16 @@ fn a_trait_without_cases_is_named() {
 fn an_unknown_trait_is_refused() {
     let directory = repository_with_trait("{}");
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
+
+    let cache = TempDir::new().unwrap();
+
     assert_matches!(
-        run(&repository, &["nope".to_string()], &FakeJudge::new()),
+        run(
+            &repository,
+            &["nope".to_string()],
+            &FakeJudge::new(),
+            &cache
+        ),
         Err(CaseError::UnknownTrait { .. })
     );
 }

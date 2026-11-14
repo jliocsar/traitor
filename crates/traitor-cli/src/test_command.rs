@@ -1,3 +1,5 @@
+//! `traitor test`: judges each trait's cases and reports the ones that get a different verdict.
+
 use std::collections::BTreeMap;
 
 use traitor_core::case::{
@@ -6,13 +8,15 @@ use traitor_core::case::{
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 use traitor_core::verdict::Answer;
 
+use crate::error::warn_if_not_cached;
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
-pub async fn run(traits: &[String]) -> CommandResult {
+pub(crate) async fn run(traits: &[String]) -> CommandResult {
     let session = Session::in_current_directory()?;
     let report = test_cases(&session.repository, traits, &session.judge, &session.store).await?;
     print_case_report(&report);
+    warn_if_not_cached(report.cache_write_error.as_ref());
     Ok(if report.all_hold() {
         Outcome::Success
     } else {
@@ -28,16 +32,20 @@ fn print_case_report(report: &CaseReport) {
             result.path, result.expected, result.verdict.answer, result.verdict.probabilities.fail
         );
     }
+
     let mut by_trait: BTreeMap<&str, Vec<&CaseResult>> = BTreeMap::new();
+
     for result in &report.results {
         by_trait
             .entry(result.definition.slug.as_str())
             .or_default()
             .push(result);
     }
+
     if !by_trait.is_empty() {
         println!();
     }
+
     for (slug, results) in &by_trait {
         println!(
             "{slug}: p(fail) on fail cases {}, on pass cases {}",
@@ -45,6 +53,7 @@ fn print_case_report(report: &CaseReport) {
             fail_probability_range(results, Answer::Pass)
         );
     }
+
     let held = report
         .results
         .iter()
@@ -60,6 +69,7 @@ fn print_case_report(report: &CaseReport) {
         "{held} of {} cases got the verdict their folder names, {cached} from the cache.",
         report.results.len()
     );
+
     if !report.traits_without_cases.is_empty() {
         println!(
             "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/{PASS_CASES_DIRECTORY} and {FAIL_CASES_DIRECTORY}.",
@@ -77,6 +87,7 @@ fn fail_probability_range(results: &[&CaseResult], expected: Answer) -> String {
             None => Some((fail, fail)),
             Some((lowest, highest)) => Some((f64::min(lowest, fail), f64::max(highest, fail))),
         });
+
     match range {
         Some((lowest, highest)) => format!("{lowest:.2} to {highest:.2}"),
         None => "none".to_string(),

@@ -1,4 +1,5 @@
-use std::fmt::Write as _;
+//! A directory of JSON files, keyed by name, for the verdict cache and the Stop hook's blocked fails.
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,6 +8,17 @@ use std::process;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
+use snafu::{ResultExt, Snafu};
+
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// A cache file that couldn't be written. Nothing is lost but time: a later run asks again.
+#[derive(Debug, Snafu)]
+#[snafu(display("couldn't write {}: {source}", path.display()))]
+pub struct CacheWriteError {
+    path: PathBuf,
+    source: io::Error,
+}
 
 #[derive(Clone)]
 pub struct JsonStore {
@@ -14,6 +26,7 @@ pub struct JsonStore {
 }
 
 impl JsonStore {
+    #[must_use]
     pub fn in_user_cache_directory() -> Self {
         Self {
             directory: dirs::cache_dir().map(|cache| cache.join("traitor").join("v1")),
@@ -41,10 +54,15 @@ impl JsonStore {
         serde_json::from_slice(&contents).ok()
     }
 
-    pub(crate) fn write_best_effort<T: Serialize>(&self, name: &str, value: &T) {
-        if let Some(directory) = &self.directory {
-            let _ = write_atomically(directory, name, value);
-        }
+    /// Writes `value` as `name`. A store without a directory writes nothing.
+    pub(crate) fn write<T: Serialize>(&self, name: &str, value: &T) -> Result<(), CacheWriteError> {
+        let Some(directory) = &self.directory else {
+            return Ok(());
+        };
+
+        write_atomically(directory, name, value).context(CacheWriteSnafu {
+            path: directory.join(format!("{name}.json")),
+        })
     }
 }
 
@@ -58,8 +76,15 @@ fn write_atomically<T: Serialize>(directory: &Path, name: &str, value: &T) -> io
 pub(crate) fn hex_sha256(material: &[u8]) -> String {
     Sha256::digest(material)
         .iter()
-        .fold(String::with_capacity(64), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
+        .flat_map(|byte| {
+            [
+                HEX_DIGITS[usize::from(byte >> 4)],
+                HEX_DIGITS[usize::from(byte & 0x0f)],
+            ]
         })
+        .map(char::from)
+        .collect()
 }
+
+#[cfg(test)]
+mod tests;

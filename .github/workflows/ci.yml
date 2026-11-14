@@ -22,6 +22,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
+      # begone-slop-rs's syntax and pattern rules. Clippy above already enforces its lints.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: ast-grep@0.45.3
+      - run: cargo install --locked --git https://github.com/jliocsar/begone-slop-rs --rev 86d97b94dacdd302fc1c50f2530e5642e77b921c cargo-bs
+      - run: cargo bs
 
   build:
     uses: ./.github/workflows/build.yml

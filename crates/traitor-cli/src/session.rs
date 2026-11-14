@@ -1,3 +1,5 @@
+//! Everything a command needs to judge a repository: the repository, the judge and the cache.
+
 use std::env;
 use std::path::Path;
 

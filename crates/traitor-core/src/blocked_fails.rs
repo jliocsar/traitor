@@ -1,7 +1,22 @@
+//! The fails each agent session was already told about, so it's blocked on each fail once.
+
 use std::collections::BTreeSet;
 
+use serde::Deserialize;
+
 use crate::check::{Finding, Report};
-use crate::store::{JsonStore, hex_sha256};
+use crate::store::{CacheWriteError, JsonStore, hex_sha256};
+
+/// An agent session's id, as its harness names it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct SessionId(String);
+
+impl From<String> for SessionId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
 
 /// The fails each agent session was already blocked on, so a session is blocked on a fail once.
 pub struct BlockedFails {
@@ -9,21 +24,31 @@ pub struct BlockedFails {
 }
 
 impl BlockedFails {
+    #[must_use]
     pub fn new(store: &JsonStore) -> Self {
         Self {
             store: store.subdirectory("stop-hook"),
         }
     }
 
-    pub fn read(&self, session_id: &str) -> BTreeSet<String> {
+    #[must_use]
+    pub fn read(&self, session: &SessionId) -> BTreeSet<String> {
         self.store
-            .read(&hex_sha256(session_id.as_bytes()))
+            .read(&hex_sha256(session.0.as_bytes()))
             .unwrap_or_default()
     }
 
-    pub fn write(&self, session_id: &str, fails: &BTreeSet<String>) {
-        self.store
-            .write_best_effort(&hex_sha256(session_id.as_bytes()), fails);
+    /// Remembers `fails` as the ones `session` was blocked on.
+    ///
+    /// # Errors
+    ///
+    /// When the file can't be written. The session may then be blocked on the same fails again.
+    pub fn write(
+        &self,
+        session: &SessionId,
+        fails: &BTreeSet<String>,
+    ) -> Result<(), CacheWriteError> {
+        self.store.write(&hex_sha256(session.0.as_bytes()), fails)
     }
 }
 
@@ -38,32 +63,39 @@ pub struct SessionFails<'report, 'repository> {
     pub identities: BTreeSet<String>,
 }
 
+/// The report's fails, and whether any is new to a session already blocked on `already_blocked`.
+///
+/// # Errors
+///
+/// When a fail's identity can't be serialized to be hashed.
 pub fn session_fails<'report, 'repository>(
     report: &'report Report<'repository>,
     already_blocked: &BTreeSet<String>,
-) -> SessionFails<'report, 'repository> {
+) -> Result<SessionFails<'report, 'repository>, serde_json::Error> {
     let failing: Vec<&Finding> = report
         .findings
         .iter()
         .filter(|finding| finding.fails_check())
         .collect();
-    let identities: BTreeSet<String> = failing.iter().map(|finding| identity(finding)).collect();
-    SessionFails {
+    let identities: BTreeSet<String> = failing
+        .iter()
+        .map(|finding| identity(finding))
+        .collect::<Result<_, _>>()?;
+    Ok(SessionFails {
         any_new: !identities.is_subset(already_blocked),
         failing,
         identities,
-    }
+    })
 }
 
 /// The same trait failing on the same snippet text has the same identity, wherever it moves.
-fn identity(finding: &Finding) -> String {
+fn identity(finding: &Finding) -> Result<String, serde_json::Error> {
     let material = serde_json::to_vec(&(
         &finding.definition.slug,
         &finding.path,
         &finding.snippet.text,
-    ))
-    .expect("strings always serialize");
-    hex_sha256(&material)
+    ))?;
+    Ok(hex_sha256(&material))
 }
 
 #[cfg(test)]

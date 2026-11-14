@@ -1,3 +1,5 @@
+//! Judging every changed snippet against the traits whose paths match it.
+
 use snafu::Snafu;
 
 use crate::climb::{Snippet, snippets_for_changes};
@@ -5,7 +7,7 @@ use crate::configured_repository::ConfiguredRepository;
 use crate::git::GitError;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
-use crate::store::JsonStore;
+use crate::store::{CacheWriteError, JsonStore};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::{Answer, Verdict};
 
@@ -28,11 +30,13 @@ pub struct Finding<'repository> {
 }
 
 impl Finding<'_> {
+    #[must_use]
     pub fn fails_check(&self) -> bool {
         self.threshold
             .is_some_and(|threshold| self.verdict.probabilities.fail >= threshold)
     }
 
+    #[must_use]
     pub fn location(&self) -> String {
         format!(
             "{}:{}-{}",
@@ -41,20 +45,24 @@ impl Finding<'_> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Report<'repository> {
     pub snippet_count: usize,
     pub findings: Vec<Finding<'repository>>,
     /// Changed paths that aren't valid UTF-8, shown as near as they can be. They weren't judged.
     pub non_utf8_paths: Vec<String>,
+    /// The first verdict that couldn't be cached. The verdicts are the same; a later run asks again.
+    pub cache_write_error: Option<CacheWriteError>,
 }
 
 impl Report<'_> {
+    #[must_use]
     pub fn fails_check(&self) -> bool {
         self.findings.iter().any(Finding::fails_check)
     }
 
     /// Whether there are fails, and none of their traits has a threshold to fail the check with.
+    #[must_use]
     pub fn fails_are_only_reported(&self) -> bool {
         let mut fails = self
             .findings
@@ -84,6 +92,11 @@ impl<'repository> ChangedSnippet<'repository> {
     }
 }
 
+/// Judges every snippet that changed in `revision` against the traits whose paths match it.
+///
+/// # Errors
+///
+/// When git fails, or the judge can't give a verdict.
 pub async fn check<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
     revision: Option<&str>,
@@ -94,14 +107,18 @@ pub async fn check<'repository, J: Judge>(
     let comparison = git.resolve_comparison(revision)?;
     let changed_files = git.changed_files(&comparison)?;
     let mut changed = Vec::new();
+
     for file in changed_files.files {
         let traits = repository.traits_for(&file.path);
+
         if traits.is_empty() {
             continue;
         }
+
         let Some(source) = git.read_file(&comparison, &file.path)? else {
             continue;
         };
+
         changed.extend(
             snippets_for_changes(&file.path, &source, &file.changes)
                 .into_iter()
@@ -113,9 +130,10 @@ pub async fn check<'repository, J: Judge>(
         );
     }
 
-    let judged = judge_through_cache(judge, store, changed, ChangedSnippet::request).await?;
-    let snippet_count = judged.len();
-    let findings = judged
+    let judgements = judge_through_cache(judge, store, changed, ChangedSnippet::request).await?;
+    let snippet_count = judgements.judged.len();
+    let findings = judgements
+        .judged
         .into_iter()
         .flat_map(|(changed, judged)| {
             judged.into_iter().map(move |judged| Finding {
@@ -132,6 +150,7 @@ pub async fn check<'repository, J: Judge>(
         snippet_count,
         findings,
         non_utf8_paths: changed_files.non_utf8_paths,
+        cache_write_error: judgements.cache_write_error,
     })
 }
 

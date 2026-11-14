@@ -1,3 +1,5 @@
+//! A git repository with its traitor config and trait definitions loaded.
+
 use std::path::Path;
 
 use snafu::Snafu;
@@ -30,12 +32,22 @@ pub struct ConfiguredRepository {
 }
 
 impl ConfiguredRepository {
+    /// The repository around `directory`, with its config and traits.
+    ///
+    /// # Errors
+    ///
+    /// When there's no repository, or its config or traits can't be read.
     pub fn open(directory: &Path) -> Result<Self, OpenError> {
         Self::load(Repository::discover(directory)?)
     }
 
     /// The repository at `directory`, or none when it isn't in a git repository or has no
-    /// traits. Git failing to run at all is an error, not "no repository".
+    /// traits.
+    ///
+    /// # Errors
+    ///
+    /// When git can't run at all (that isn't "no repository"), or the config or traits of a
+    /// repository that has traits can't be read.
     pub fn open_if_it_has_traits(directory: &Path) -> Result<Option<Self>, OpenError> {
         repository_with_traits(Repository::discover(directory))?
             .map(Self::load)
@@ -50,6 +62,7 @@ impl ConfiguredRepository {
             config,
             definitions,
         };
+
         if let Some(slug) = repository
             .config
             .configured_traits()
@@ -57,6 +70,7 @@ impl ConfiguredRepository {
         {
             return UnknownTraitSnafu { slug }.fail();
         }
+
         Ok(repository)
     }
 

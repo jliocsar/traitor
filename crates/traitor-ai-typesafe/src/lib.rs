@@ -1,3 +1,5 @@
+//! The judge behind traitor's verdicts: the Jev model, asked over HTTP at `api.typesafe.ai`.
+
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -8,10 +10,12 @@ use traitor_core::question::{Question, SnippetState};
 use traitor_core::verdict::{Answer, Probabilities, Verdict};
 
 pub const API_HOST: &str = "api.typesafe.ai";
+
 const SYSTEM_ONE_PATH: &str = "/v1/systemone";
 const MODEL: &str = "jev-1.14.0";
 const API_KEY_VARIABLE: &str = "TYPESAFE_API_KEY";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// How much of an error answer's body to show: enough for an API's error message, not a
 /// proxy's whole HTML page.
 const ERROR_BODY_CHARS: usize = 300;
@@ -45,9 +49,15 @@ struct SystemOneRequest<'request> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum QuestionKind {
+    Choice,
+}
+
+#[derive(Serialize)]
 struct ChoiceQuestion<'request> {
     #[serde(rename = "type")]
-    kind: &'static str,
+    kind: QuestionKind,
     #[serde(flatten)]
     question: Question<'request>,
 }
@@ -65,6 +75,11 @@ struct ChoiceAnswer {
 }
 
 impl TypeSafeJudge {
+    /// A judge with the API key from `TYPESAFE_API_KEY`. A missing key fails only when it's asked.
+    ///
+    /// # Errors
+    ///
+    /// When the HTTP client can't be set up.
     pub fn from_environment() -> Result<Self, TypeSafeError> {
         Ok(Self {
             client: reqwest::Client::builder()
@@ -99,6 +114,7 @@ impl Judge for TypeSafeJudge {
             .await
             .context(RequestSnafu)?;
         let status = response.status();
+
         if !status.is_success() {
             return StatusSnafu {
                 status: status.as_u16(),
@@ -106,6 +122,7 @@ impl Judge for TypeSafeJudge {
             }
             .fail();
         }
+
         let decoded: SystemOneResponse = response.json().await.context(DecodeSnafu)?;
         Ok(verdicts(decoded))
     }
@@ -123,7 +140,7 @@ fn request_body<'request>(
                 (
                     slug,
                     ChoiceQuestion {
-                        kind: "choice",
+                        kind: QuestionKind::Choice,
                         question,
                     },
                 )
@@ -132,9 +149,10 @@ fn request_body<'request>(
     }
 }
 
-/// The text cut to ERROR_BODY_CHARS characters, with an ellipsis when it was cut.
+/// The text cut to `ERROR_BODY_CHARS` characters, with an ellipsis when it was cut.
 fn shorten(text: &str) -> String {
     let text = text.trim();
+
     match text.char_indices().nth(ERROR_BODY_CHARS) {
         Some((end, _)) => format!("{}…", &text[..end]),
         None => text.to_string(),

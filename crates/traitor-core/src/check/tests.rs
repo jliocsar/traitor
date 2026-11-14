@@ -1,3 +1,5 @@
+//! Tests for judging a repository's changed snippets.
+
 use std::assert_matches;
 use std::fs;
 use std::path::Path;
@@ -37,6 +39,7 @@ fn judges_each_changed_unit_and_fails_over_the_threshold() {
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
     let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+
     assert_eq!(report.snippet_count, 2);
     assert_eq!(judge.calls.get(), 2);
     assert_eq!(
@@ -62,6 +65,7 @@ fn a_second_run_reads_every_verdict_from_the_cache() {
     let judge = FakeJudge::new();
     block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
     let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+
     assert_eq!(judge.calls.get(), 2);
     assert!(report.findings.iter().all(|finding| finding.from_cache));
 }
@@ -78,6 +82,7 @@ fn without_a_threshold_a_fail_is_only_reported() {
         &cache_in(&cache),
     ))
     .unwrap();
+
     assert!(
         report
             .findings
@@ -100,6 +105,7 @@ fn a_fail_under_its_threshold_neither_fails_the_check_nor_counts_as_only_reporte
         &cache_in(&cache),
     ))
     .unwrap();
+
     assert!(!report.fails_check());
     assert!(!report.fails_are_only_reported());
 }
@@ -113,6 +119,7 @@ fn an_exempt_path_is_never_asked_about() {
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
     let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+
     assert_eq!(judge.calls.get(), 0);
     assert!(report.findings.is_empty());
 }
@@ -121,6 +128,7 @@ fn an_exempt_path_is_never_asked_about() {
 fn a_repo_without_a_config_cannot_be_opened() {
     let directory = repository("{}");
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
+
     assert_matches!(
         ConfiguredRepository::open(directory.path()),
         Err(OpenError::Config {
@@ -132,6 +140,7 @@ fn a_repo_without_a_config_cannot_be_opened() {
 #[test]
 fn a_config_for_a_trait_that_doesnt_exist_cannot_be_opened() {
     let directory = repository(r#"{ "traits": { "nope": { "threshold": 0.5 } } }"#);
+
     assert_matches!(
         ConfiguredRepository::open(directory.path()),
         Err(OpenError::UnknownTrait { .. })
@@ -145,6 +154,7 @@ fn an_offline_judge_cannot_check() {
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::offline();
     let result = block_on(check(&repository, None, &judge, &cache_in(&cache)));
+
     assert_matches!(
         result,
         Err(CheckError::Judging {
@@ -159,9 +169,15 @@ fn verdicts_that_came_back_are_kept_when_another_request_fails() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let flaky = FakeJudge::offline_after(1);
-    assert!(block_on(check(&repository, None, &flaky, &cache_in(&cache))).is_err());
+
+    assert_matches!(
+        block_on(check(&repository, None, &flaky, &cache_in(&cache))),
+        Err(_)
+    );
+
     let judge = FakeJudge::new();
     block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+
     assert_eq!(judge.calls.get(), 1);
 }
 
@@ -182,6 +198,7 @@ fn a_new_binary_file_is_never_asked_about() {
         &cache_in(&cache),
     ))
     .unwrap();
+
     assert!(
         report
             .findings
@@ -209,6 +226,7 @@ fn a_range_reads_files_from_its_last_commit() {
         &cache_in(&cache),
     ))
     .unwrap();
+
     assert_eq!(report.snippet_count, 2);
     assert!(
         report
@@ -216,4 +234,24 @@ fn a_range_reads_files_from_its_last_commit() {
             .iter()
             .all(|finding| !finding.snippet.text.contains("changed"))
     );
+}
+
+#[test]
+fn a_cache_that_cant_be_written_is_reported_without_changing_the_verdicts() {
+    let directory = repository(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let not_a_directory = cache.path().join("file");
+    fs::write(&not_a_directory, "").unwrap();
+    let report = block_on(check(
+        &repository,
+        None,
+        &FakeJudge::new(),
+        &JsonStore::at(not_a_directory),
+    ))
+    .unwrap();
+
+    assert_matches!(report.cache_write_error, Some(_));
+    assert_eq!(report.snippet_count, 2);
+    assert!(report.fails_check());
 }

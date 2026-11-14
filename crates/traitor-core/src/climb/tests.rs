@@ -1,3 +1,5 @@
+//! Tests for finding the snippet around each change.
+
 use std::fmt::Write;
 use std::ops::RangeInclusive;
 
@@ -90,6 +92,7 @@ fn grammars_load() {
     ] {
         let language = Language::from_path(path).unwrap();
         let tree = language.parse(source).unwrap();
+
         assert!(!tree.root_node().has_error(), "{path}");
     }
 }
@@ -181,6 +184,7 @@ fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
     let broken = "function broken( {\n  return 1\n}\n";
     let source = format!("{MODULE}\n{broken}\n{MODULE}");
     let snippets = snippets_for_changes("src/module.ts", &source, &[Change::WHOLE_FILE]);
+
     assert!(snippets.len() > 3);
     assert!(
         snippets
@@ -193,6 +197,7 @@ fn a_broken_unit_in_a_new_file_windows_only_its_own_lines() {
 fn a_long_new_file_in_an_unknown_language_is_cut_to_the_budget() {
     let source = numbered_lines(1..=2000, |line| format!("line {line}"));
     let snippets = snippets_for_changes("src/main.rs", &source, &[Change::WHOLE_FILE]);
+
     assert!(snippets.len() > 1);
     assert!(
         snippets
@@ -219,6 +224,7 @@ fn an_empty_new_file_selects_nothing() {
 #[test]
 fn blank_lines_in_an_unknown_language_select_nothing() {
     let source = "a = 1\n\n\nb = 2\n";
+
     assert_eq!(
         snippets_for_changes("src/main.py", source, &[lines(2, 3)]),
         Vec::new()
@@ -229,6 +235,7 @@ fn blank_lines_in_an_unknown_language_select_nothing() {
 fn an_unknown_language_falls_back_to_a_line_window() {
     let source = numbered_lines(1..=50, |line| format!("line {line}"));
     let snippets = snippets_for_changes("src/main.rs", &source, &[lines(30, 31)]);
+
     assert_eq!(
         snippets
             .iter()
@@ -243,6 +250,7 @@ fn leading_context_gives_way_to_the_budget() {
     let context = format!("{}\n", "x".repeat(200)).repeat(20);
     let source = format!("{context}changed\n");
     let snippets = snippets_for_changes("src/x.py", &source, &[lines(21, 21)]);
+
     assert!(
         snippets
             .iter()
@@ -256,6 +264,7 @@ fn a_window_stops_at_a_unit_that_was_placed() {
     let broken = "function broken( {\n  return 1\n}\n";
     let source = format!("{MODULE}\n{broken}\n{MODULE}");
     let snippets = snippets_for_changes("src/module.ts", &source, &[Change::WHOLE_FILE]);
+
     assert!(
         snippets
             .windows(2)
@@ -267,6 +276,7 @@ fn a_window_stops_at_a_unit_that_was_placed() {
 fn a_deletion_between_blank_lines_reaches_the_nearest_code_on_each_side() {
     let source = "def a():\n    pass\n\n\n\n\ndef b():\n    pass\n";
     let snippets = snippets_for_changes("m.py", source, &[Change::Deleted { after: 4 }]);
+
     assert_eq!(
         snippets
             .iter()
@@ -281,6 +291,7 @@ fn a_window_on_a_units_last_line_does_not_repeat_the_unit() {
     let body = numbered_lines(1..=25, |index| format!("  x{index}()"));
     let source = format!("function a() {{\n{body}}}; foo()\n");
     let snippets = snippets_for_changes("src/a.ts", &source, &[lines(2, 2), lines(27, 27)]);
+
     assert!(
         snippets
             .windows(2)
@@ -292,6 +303,7 @@ fn a_window_on_a_units_last_line_does_not_repeat_the_unit() {
 fn a_fragment_around_a_parsed_block_is_one_snippet() {
     let source = "      'Program:exit'(program) {\n        let highest = -1\n        for (const statement of program.body) {\n          highest = Math.max(highest, rank(statement))\n        }\n      },\n";
     let snippets = snippets_for_changes("src/rule.ts", source, &[Change::WHOLE_FILE]);
+
     assert_eq!(
         snippets
             .iter()

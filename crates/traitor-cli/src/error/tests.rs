@@ -1,3 +1,5 @@
+//! Tests for printing an error with its causes.
+
 use std::io;
 
 use snafu::Snafu;

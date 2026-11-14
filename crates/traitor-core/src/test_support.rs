@@ -1,10 +1,11 @@
+//! Test helpers: a fake judge, a sample trait, and git repositories in temporary directories.
+
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use serde_json::Value;
 use snafu::Snafu;
 use tempfile::TempDir;
 
@@ -12,20 +13,27 @@ use crate::judge::{Judge, JudgeRequest};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::{Answer, Probabilities, Verdict};
 
-pub const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths:\n  - \"src/**/*.ts\"\n---\n\nA computed value flows through combinators, not a reassigned let.\n";
+pub(crate) const TRAIT: &str = "---\ntitle: Railway, not guards\nwhy: Guards hide how a value flows.\npaths:\n  - \"src/**/*.ts\"\n---\n\nA computed value flows through combinators, not a reassigned let.\n";
 
 #[derive(Debug, Snafu)]
 #[snafu(display("offline"))]
-pub struct Offline;
+pub(crate) struct Offline;
 
-pub struct FakeJudge {
-    pub calls: Cell<usize>,
-    pub states: RefCell<Vec<Value>>,
+/// What the fake judge was shown of a snippet.
+#[derive(Debug)]
+pub(crate) struct SeenState {
+    pub(crate) path: String,
+    pub(crate) language: String,
+}
+
+pub(crate) struct FakeJudge {
+    pub(crate) calls: Cell<usize>,
+    pub(crate) states: RefCell<Vec<SeenState>>,
     answers_before_offline: usize,
 }
 
 impl FakeJudge {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             calls: Cell::new(0),
             states: RefCell::new(Vec::new()),
@@ -33,11 +41,11 @@ impl FakeJudge {
         }
     }
 
-    pub fn offline() -> Self {
+    pub(crate) fn offline() -> Self {
         Self::offline_after(0)
     }
 
-    pub fn offline_after(answers: usize) -> Self {
+    pub(crate) fn offline_after(answers: usize) -> Self {
         Self {
             answers_before_offline: answers,
             ..Self::new()
@@ -57,10 +65,12 @@ impl Judge for FakeJudge {
         request: &JudgeRequest<'_, '_>,
     ) -> impl Future<Output = Result<BTreeMap<String, Verdict>, Offline>> {
         self.calls.set(self.calls.get() + 1);
-        self.states
-            .borrow_mut()
-            .push(serde_json::to_value(request.state).unwrap());
+        self.states.borrow_mut().push(SeenState {
+            path: request.state.path.to_string(),
+            language: request.state.language.to_string(),
+        });
         let fails = request.state.snippet.contains("let ");
+
         let answer = if self.calls.get() > self.answers_before_offline {
             Err(Offline)
         } else {
@@ -70,11 +80,12 @@ impl Judge for FakeJudge {
                 .map(|definition| (definition.slug.clone(), verdict(fails)))
                 .collect())
         };
+
         std::future::ready(answer)
     }
 }
 
-pub fn verdict(fails: bool) -> Verdict {
+pub(crate) fn verdict(fails: bool) -> Verdict {
     let fail = if fails { 0.97 } else { 0.01 };
     Verdict {
         answer: if fails { Answer::Fail } else { Answer::Pass },
@@ -88,11 +99,11 @@ pub fn verdict(fails: bool) -> Verdict {
     }
 }
 
-pub fn railway_definition() -> TraitDefinition {
+pub(crate) fn railway_definition() -> TraitDefinition {
     TraitDefinition::parse("railway-not-guards", Path::new("TRAIT.md"), TRAIT).unwrap()
 }
 
-pub fn git(directory: &Path, arguments: &[&str]) {
+pub(crate) fn git(directory: &Path, arguments: &[&str]) {
     let status = Command::new("git")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -107,10 +118,11 @@ pub fn git(directory: &Path, arguments: &[&str]) {
         .args(arguments)
         .status()
         .unwrap();
+
     assert!(status.success(), "git {arguments:?}");
 }
 
-pub fn repository_with_trait(config: &str) -> TempDir {
+pub(crate) fn repository_with_trait(config: &str) -> TempDir {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     git(root, &["init", "-q", "-b", "main"]);

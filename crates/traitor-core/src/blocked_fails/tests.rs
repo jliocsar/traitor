@@ -1,3 +1,5 @@
+//! Tests for which fails are new to a session, and for remembering them.
+
 use std::fs;
 use std::sync::LazyLock;
 
@@ -30,11 +32,23 @@ fn finding(path: &str, text: &str, verdict: Verdict, threshold: Option<f64>) -> 
     }
 }
 
+fn fails_of<'report, 'repository>(
+    report: &'report Report<'repository>,
+    already_blocked: &BTreeSet<String>,
+) -> SessionFails<'report, 'repository> {
+    session_fails(report, already_blocked).unwrap()
+}
+
+fn session(name: &str) -> SessionId {
+    SessionId::from(name.to_string())
+}
+
 fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
     Report {
         snippet_count: findings.len(),
         findings,
         non_utf8_paths: Vec::new(),
+        cache_write_error: None,
     }
 }
 
@@ -46,10 +60,13 @@ fn the_same_fails_are_new_only_once() {
         verdict(true),
         Some(0.5),
     )]);
-    let first = session_fails(&failing, &BTreeSet::new());
+    let first = fails_of(&failing, &BTreeSet::new());
+
     assert!(first.any_new);
     assert_eq!(first.failing.len(), 1);
-    let again = session_fails(&failing, &first.identities);
+
+    let again = fails_of(&failing, &first.identities);
+
     assert!(!again.any_new);
     assert_eq!(again.failing.len(), 1);
 }
@@ -68,8 +85,9 @@ fn a_changed_fail_is_new_again() {
         verdict(true),
         Some(0.5),
     )]);
-    let blocked = session_fails(&before, &BTreeSet::new()).identities;
-    assert!(session_fails(&after, &blocked).any_new);
+    let blocked = fails_of(&before, &BTreeSet::new()).identities;
+
+    assert!(fails_of(&after, &blocked).any_new);
 }
 
 #[test]
@@ -84,14 +102,16 @@ fn fixing_one_of_two_fails_brings_nothing_new() {
         verdict(true),
         Some(0.5),
     )]);
-    let blocked = session_fails(&both, &BTreeSet::new()).identities;
-    assert!(!session_fails(&one, &blocked).any_new);
+    let blocked = fails_of(&both, &BTreeSet::new()).identities;
+
+    assert!(!fails_of(&one, &blocked).any_new);
 }
 
 #[test]
 fn a_fail_without_a_threshold_is_not_failing() {
     let reported_only = report(vec![finding("src/a.ts", "let a = 1", verdict(true), None)]);
-    let fails = session_fails(&reported_only, &BTreeSet::new());
+    let fails = fails_of(&reported_only, &BTreeSet::new());
+
     assert!(fails.failing.is_empty());
     assert!(!fails.any_new);
     assert!(fails.identities.is_empty());
@@ -102,9 +122,12 @@ fn each_session_keeps_its_own_blocked_fails() {
     let cache = TempDir::new().unwrap();
     let blocked_fails = BlockedFails::new(&JsonStore::at(cache.path().to_path_buf()));
     let fails = BTreeSet::from(["a".to_string()]);
-    blocked_fails.write("session/../odd", &fails);
-    assert!(blocked_fails.read("another").is_empty());
-    assert_eq!(blocked_fails.read("session/../odd"), fails);
+    blocked_fails
+        .write(&session("session/../odd"), &fails)
+        .unwrap();
+
+    assert!(blocked_fails.read(&session("another")).is_empty());
+    assert_eq!(blocked_fails.read(&session("session/../odd")), fails);
 }
 
 #[test]
@@ -117,12 +140,16 @@ fn a_checked_session_has_new_fails_once() {
     let cache = TempDir::new().unwrap();
     let store = JsonStore::at(cache.path().to_path_buf());
     let blocked_fails = BlockedFails::new(&store);
+
     let stop = || {
         let report = block_on(check(&repository, None, &FakeJudge::new(), &store)).unwrap();
-        let fails = session_fails(&report, &blocked_fails.read("session"));
-        blocked_fails.write("session", &fails.identities);
+        let fails = fails_of(&report, &blocked_fails.read(&session("session")));
+        blocked_fails
+            .write(&session("session"), &fails.identities)
+            .unwrap();
         fails.any_new
     };
+
     assert!(stop());
     assert!(!stop());
 }
