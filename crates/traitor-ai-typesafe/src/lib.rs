@@ -12,6 +12,9 @@ const SYSTEM_ONE_PATH: &str = "/v1/systemone";
 const MODEL: &str = "jev-1.14.0";
 const API_KEY_VARIABLE: &str = "TYPESAFE_API_KEY";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// How much of an error answer's body to show: enough for an API's error message, not a
+/// proxy's whole HTML page.
+const ERROR_BODY_CHARS: usize = 300;
 
 #[derive(Debug, Snafu)]
 pub enum TypeSafeError {
@@ -99,7 +102,7 @@ impl Judge for TypeSafeJudge {
         if !status.is_success() {
             return StatusSnafu {
                 status: status.as_u16(),
-                body: response.text().await.unwrap_or_default(),
+                body: shorten(&response.text().await.unwrap_or_default()),
             }
             .fail();
         }
@@ -126,6 +129,15 @@ fn request_body<'request>(
                 )
             })
             .collect(),
+    }
+}
+
+/// The text cut to ERROR_BODY_CHARS characters, with an ellipsis when it was cut.
+fn shorten(text: &str) -> String {
+    let text = text.trim();
+    match text.char_indices().nth(ERROR_BODY_CHARS) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_string(),
     }
 }
 

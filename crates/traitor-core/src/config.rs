@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
+#[cfg(test)]
 use schemars::JsonSchema;
 use semver::Version;
 use serde::Deserialize;
@@ -49,51 +50,75 @@ pub enum ConfigError {
     InvalidExemption { source: GlobError },
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[schemars(
-    title = "traitor config",
-    description = "A repo's traitor settings, in .agents/traitor.json. Run `traitor init` to create or upgrade it."
+#[cfg_attr(
+    test,
+    schemars(
+        title = "traitor config",
+        description = "A repo's traitor settings, in .agents/traitor.json. Run `traitor init` to create or upgrade it."
+    )
 )]
 struct ConfigFile {
     #[serde(rename = "$schema", default)]
-    #[schemars(
-        description = "The schema for the traitor version this config is for. `traitor init` reads the version from it and keeps it current."
+    #[cfg_attr(
+        test,
+        schemars(
+            description = "The schema for the traitor version this config is for. `traitor init` reads the version from it and keeps it current."
+        )
     )]
     _schema: Option<String>,
     #[serde(default)]
-    #[schemars(
-        description = "Settings for each trait, by the name of its folder in .agents/traits."
+    #[cfg_attr(
+        test,
+        schemars(
+            description = "Settings for each trait, by the name of its folder in .agents/traits."
+        )
     )]
     traits: BTreeMap<String, TraitSettingsFile>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[schemars(rename = "TraitSettings")]
+#[cfg_attr(test, schemars(rename = "TraitSettings"))]
 struct TraitSettingsFile {
     #[serde(default)]
-    #[schemars(
-        range(min = 0.0, max = 1.0),
-        description = "The probability of a fail at or above which this trait fails the check. Without one, the trait's verdicts are only reported."
+    #[cfg_attr(
+        test,
+        schemars(
+            range(min = 0.0, max = 1.0),
+            description = "The probability of a fail at or above which this trait fails the check. Without one, the trait's verdicts are only reported."
+        )
     )]
     threshold: Option<f64>,
     #[serde(default)]
-    #[schemars(description = "Paths this trait doesn't judge, each group with its reason.")]
+    #[cfg_attr(
+        test,
+        schemars(description = "Paths this trait doesn't judge, each group with its reason.")
+    )]
     exempt: Vec<ExemptionFile>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[schemars(rename = "Exemption")]
+#[cfg_attr(test, schemars(rename = "Exemption"))]
 struct ExemptionFile {
-    #[schemars(
-        description = "Globs relative to the repo root, where * stops at a slash and ** crosses them."
+    #[cfg_attr(
+        test,
+        schemars(
+            description = "Globs relative to the repo root, where * stops at a slash and ** crosses them."
+        )
     )]
     paths: Vec<String>,
-    #[schemars(
-        pattern(r"\S"),
-        description = "Why these paths don't have to hold the trait."
+    #[cfg_attr(
+        test,
+        schemars(
+            pattern(r"\S"),
+            description = "Why these paths don't have to hold the trait."
+        )
     )]
     reason: String,
 }

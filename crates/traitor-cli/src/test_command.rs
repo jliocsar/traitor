@@ -25,10 +25,7 @@ fn print_case_report(report: &CaseReport) {
         let mark = if result.holds() { "ok" } else { "MISS" };
         println!(
             "{mark}: {} expects {}, got {}, p(fail) {:.2}",
-            result.path,
-            result.expected.label(),
-            result.verdict.answer.label(),
-            result.verdict.probabilities.fail
+            result.path, result.expected, result.verdict.answer, result.verdict.probabilities.fail
         );
     }
     let mut by_trait: BTreeMap<&str, Vec<&CaseResult>> = BTreeMap::new();
