@@ -9,6 +9,7 @@ use traitor_core::case::CaseError;
 use traitor_core::check::CheckError;
 use traitor_core::configured_repository::OpenError;
 use traitor_core::init::InitError;
+use traitor_core::store::CacheWriteError;
 
 /// Why a command couldn't run.
 #[derive(Debug, Snafu)]
@@ -32,6 +33,13 @@ pub(crate) enum CliError {
     FailIdentity { source: serde_json::Error },
     #[snafu(display("couldn't write the Stop hook's answer: {source}"))]
     HookOutput { source: serde_json::Error },
+}
+
+/// Says on stderr that verdicts couldn't be cached. The command's result doesn't change.
+pub(crate) fn warn_if_not_cached(error: Option<&CacheWriteError>) {
+    if let Some(error) = error {
+        eprintln!("traitor couldn't cache verdicts: {}", error_chain(error));
+    }
 }
 
 /// An error and every cause under it on one line, each cause's text said once.

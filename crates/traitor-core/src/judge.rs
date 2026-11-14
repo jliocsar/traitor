@@ -6,7 +6,7 @@ use futures::{StreamExt, TryStreamExt, stream};
 use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::question::{Question, SnippetState};
-use crate::store::{JsonStore, hex_sha256};
+use crate::store::{CacheWriteError, JsonStore, hex_sha256};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::Verdict;
 
@@ -60,6 +60,12 @@ pub(crate) struct Judged<'repository> {
     pub(crate) from_cache: bool,
 }
 
+/// Each item with its verdicts, and the first verdict that couldn't be cached, if any.
+pub(crate) struct Judgements<'repository, T> {
+    pub(crate) judged: Vec<(T, Vec<Judged<'repository>>)>,
+    pub(crate) cache_write_error: Option<CacheWriteError>,
+}
+
 struct CachedQuestion<'repository> {
     definition: &'repository TraitDefinition,
     key: String,
@@ -71,13 +77,16 @@ pub(crate) async fn judge_through_cache<'repository, T, J: Judge>(
     store: &JsonStore,
     items: Vec<T>,
     request: impl Fn(&T) -> JudgeRequest<'_, 'repository>,
-) -> Result<Vec<(T, Vec<Judged<'repository>>)>, JudgingError> {
-    let judged = {
+) -> Result<Judgements<'repository, T>, JudgingError> {
+    let (judged, cache_write_error) = {
         let requests: Vec<JudgeRequest> = items.iter().map(request).collect();
         judge_requests(judge, store, &requests).await?
     };
 
-    Ok(items.into_iter().zip(judged).collect())
+    Ok(Judgements {
+        judged: items.into_iter().zip(judged).collect(),
+        cache_write_error,
+    })
 }
 
 fn cache_key(
@@ -93,7 +102,7 @@ async fn judge_requests<'repository, J: Judge>(
     judge: &J,
     store: &JsonStore,
     requests: &[JudgeRequest<'_, 'repository>],
-) -> Result<Vec<Vec<Judged<'repository>>>, JudgingError> {
+) -> Result<(Vec<Vec<Judged<'repository>>>, Option<CacheWriteError>), JudgingError> {
     let cached: Vec<Vec<CachedQuestion>> = requests
         .iter()
         .map(|request| {
@@ -132,25 +141,33 @@ async fn judge_requests<'repository, J: Judge>(
         })
         .collect();
     let asked = &cached;
-    let mut answers: BTreeMap<usize, BTreeMap<String, Verdict>> = stream::iter(uncached)
-        .map(|(index, request)| async move {
-            let verdicts = judge.judge(&request).await?;
-
-            for question in &asked[index] {
-                if let Some(verdict) = verdicts.get(&question.definition.slug) {
-                    store.write_best_effort(&question.key, verdict);
-                }
-            }
-
-            Ok::<_, J::Error>((index, verdicts))
-        })
-        .buffer_unordered(CONCURRENT_REQUESTS)
-        .try_collect()
-        .await
-        .map_err(|error| JudgingError::Judge {
-            source: Box::new(error),
-        })?;
-    cached
+    let answered: Vec<(usize, BTreeMap<String, Verdict>, Option<CacheWriteError>)> =
+        stream::iter(uncached)
+            .map(|(index, request)| async move {
+                let verdicts = judge.judge(&request).await?;
+                let cache_write_error = asked[index]
+                    .iter()
+                    .filter_map(|question| {
+                        Some((question, verdicts.get(&question.definition.slug)?))
+                    })
+                    .map(|(question, verdict)| store.write(&question.key, verdict))
+                    .fold(None, |first, written| first.or(written.err()));
+                Ok::<_, J::Error>((index, verdicts, cache_write_error))
+            })
+            .buffer_unordered(CONCURRENT_REQUESTS)
+            .try_collect()
+            .await
+            .map_err(|error| JudgingError::Judge {
+                source: Box::new(error),
+            })?;
+    let (mut answers, cache_write_error) = answered.into_iter().fold(
+        (BTreeMap::new(), None),
+        |(mut answers, first), (index, verdicts, error)| {
+            answers.insert(index, verdicts);
+            (answers, first.or(error))
+        },
+    );
+    let judged = cached
         .into_iter()
         .enumerate()
         .map(|(index, questions)| {
@@ -179,5 +196,6 @@ async fn judge_requests<'repository, J: Judge>(
                 })
                 .collect()
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok((judged, cache_write_error))
 }

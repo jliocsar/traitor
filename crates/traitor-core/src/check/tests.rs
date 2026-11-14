@@ -235,3 +235,23 @@ fn a_range_reads_files_from_its_last_commit() {
             .all(|finding| !finding.snippet.text.contains("changed"))
     );
 }
+
+#[test]
+fn a_cache_that_cant_be_written_is_reported_without_changing_the_verdicts() {
+    let directory = repository(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let not_a_directory = cache.path().join("file");
+    fs::write(&not_a_directory, "").unwrap();
+    let report = block_on(check(
+        &repository,
+        None,
+        &FakeJudge::new(),
+        &JsonStore::at(not_a_directory),
+    ))
+    .unwrap();
+
+    assert_matches!(report.cache_write_error, Some(_));
+    assert_eq!(report.snippet_count, 2);
+    assert!(report.fails_check());
+}

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use serde::Deserialize;
 
 use crate::check::{Finding, Report};
-use crate::store::{JsonStore, hex_sha256};
+use crate::store::{CacheWriteError, JsonStore, hex_sha256};
 
 /// An agent session's id, as its harness names it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -38,9 +38,17 @@ impl BlockedFails {
             .unwrap_or_default()
     }
 
-    pub fn write(&self, session: &SessionId, fails: &BTreeSet<String>) {
-        self.store
-            .write_best_effort(&hex_sha256(session.0.as_bytes()), fails);
+    /// Remembers `fails` as the ones `session` was blocked on.
+    ///
+    /// # Errors
+    ///
+    /// When the file can't be written. The session may then be blocked on the same fails again.
+    pub fn write(
+        &self,
+        session: &SessionId,
+        fails: &BTreeSet<String>,
+    ) -> Result<(), CacheWriteError> {
+        self.store.write(&hex_sha256(session.0.as_bytes()), fails)
     }
 }
 

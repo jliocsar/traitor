@@ -6,6 +6,7 @@ use traitor_core::check::{Finding, Report, check};
 use traitor_core::config::CONFIG_PATH;
 use traitor_core::verdict::Answer;
 
+use crate::error::warn_if_not_cached;
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
@@ -19,6 +20,7 @@ pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
     )
     .await?;
     print_report(&report);
+    warn_if_not_cached(report.cache_write_error.as_ref());
     Ok(if report.fails_check() {
         Outcome::TraitBroken
     } else {

@@ -12,7 +12,7 @@ use traitor_core::blocked_fails::{BlockedFails, SessionFails, SessionId, session
 use traitor_core::check::{Finding, Report, check};
 use traitor_core::verdict::Answer;
 
-use crate::error::{CliError, FailIdentitySnafu, HookOutputSnafu, error_chain};
+use crate::error::{CliError, FailIdentitySnafu, HookOutputSnafu, error_chain, warn_if_not_cached};
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
@@ -184,7 +184,15 @@ async fn respond(
     let blocked_fails = BlockedFails::new(&session.store);
     let fails = session_fails(&report, &blocked_fails.read(&input.session_id))
         .context(FailIdentitySnafu)?;
-    blocked_fails.write(&input.session_id, &fails.identities);
+    warn_if_not_cached(report.cache_write_error.as_ref());
+
+    if let Err(error) = blocked_fails.write(&input.session_id, &fails.identities) {
+        eprintln!(
+            "traitor couldn't remember which fails this session was told about: {}",
+            error_chain(&error)
+        );
+    }
+
     Ok(output(&report, &fails))
 }
 

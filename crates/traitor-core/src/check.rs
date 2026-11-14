@@ -7,7 +7,7 @@ use crate::configured_repository::ConfiguredRepository;
 use crate::git::GitError;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
-use crate::store::JsonStore;
+use crate::store::{CacheWriteError, JsonStore};
 use crate::trait_definition::TraitDefinition;
 use crate::verdict::{Answer, Verdict};
 
@@ -45,12 +45,14 @@ impl Finding<'_> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Report<'repository> {
     pub snippet_count: usize,
     pub findings: Vec<Finding<'repository>>,
     /// Changed paths that aren't valid UTF-8, shown as near as they can be. They weren't judged.
     pub non_utf8_paths: Vec<String>,
+    /// The first verdict that couldn't be cached. The verdicts are the same; a later run asks again.
+    pub cache_write_error: Option<CacheWriteError>,
 }
 
 impl Report<'_> {
@@ -128,9 +130,10 @@ pub async fn check<'repository, J: Judge>(
         );
     }
 
-    let judged = judge_through_cache(judge, store, changed, ChangedSnippet::request).await?;
-    let snippet_count = judged.len();
-    let findings = judged
+    let judgements = judge_through_cache(judge, store, changed, ChangedSnippet::request).await?;
+    let snippet_count = judgements.judged.len();
+    let findings = judgements
+        .judged
         .into_iter()
         .flat_map(|(changed, judged)| {
             judged.into_iter().map(move |judged| Finding {
@@ -147,6 +150,7 @@ pub async fn check<'repository, J: Judge>(
         snippet_count,
         findings,
         non_utf8_paths: changed_files.non_utf8_paths,
+        cache_write_error: judgements.cache_write_error,
     })
 }
 

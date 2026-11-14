@@ -51,6 +51,7 @@ fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
         snippet_count: findings.len(),
         findings,
         non_utf8_paths: Vec::new(),
+        cache_write_error: None,
     }
 }
 

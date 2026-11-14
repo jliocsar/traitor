@@ -8,8 +8,17 @@ use std::process;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
+use snafu::{ResultExt, Snafu};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// A cache file that couldn't be written. Nothing is lost but time: a later run asks again.
+#[derive(Debug, Snafu)]
+#[snafu(display("couldn't write {}: {source}", path.display()))]
+pub struct CacheWriteError {
+    path: PathBuf,
+    source: io::Error,
+}
 
 #[derive(Clone)]
 pub struct JsonStore {
@@ -45,10 +54,15 @@ impl JsonStore {
         serde_json::from_slice(&contents).ok()
     }
 
-    pub(crate) fn write_best_effort<T: Serialize>(&self, name: &str, value: &T) {
-        if let Some(directory) = &self.directory {
-            let _ = write_atomically(directory, name, value);
-        }
+    /// Writes `value` as `name`. A store without a directory writes nothing.
+    pub(crate) fn write<T: Serialize>(&self, name: &str, value: &T) -> Result<(), CacheWriteError> {
+        let Some(directory) = &self.directory else {
+            return Ok(());
+        };
+
+        write_atomically(directory, name, value).context(CacheWriteSnafu {
+            path: directory.join(format!("{name}.json")),
+        })
     }
 }
 

@@ -8,7 +8,7 @@ use snafu::{ResultExt, Snafu};
 use crate::configured_repository::ConfiguredRepository;
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
-use crate::store::JsonStore;
+use crate::store::{CacheWriteError, JsonStore};
 use crate::trait_definition::{TRAITS_DIRECTORY, TraitDefinition, visible_entries};
 use crate::verdict::{Answer, Verdict};
 
@@ -54,10 +54,12 @@ impl CaseResult<'_> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct CaseReport<'repository> {
     pub results: Vec<CaseResult<'repository>>,
     pub traits_without_cases: Vec<&'repository str>,
+    /// The first verdict that couldn't be cached. The verdicts are the same; a later run asks again.
+    pub cache_write_error: Option<CacheWriteError>,
 }
 
 impl CaseReport<'_> {
@@ -120,8 +122,9 @@ pub async fn test_cases<'repository, J: Judge>(
         cases.extend(found);
     }
 
-    let results = judge_through_cache(judge, store, cases, Case::request)
-        .await?
+    let judgements = judge_through_cache(judge, store, cases, Case::request).await?;
+    let results = judgements
+        .judged
         .into_iter()
         .flat_map(|(case, judged)| {
             judged.into_iter().map(move |judged| CaseResult {
@@ -136,6 +139,7 @@ pub async fn test_cases<'repository, J: Judge>(
     Ok(CaseReport {
         results,
         traits_without_cases,
+        cache_write_error: judgements.cache_write_error,
     })
 }
 

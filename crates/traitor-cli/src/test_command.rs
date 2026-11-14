@@ -8,6 +8,7 @@ use traitor_core::case::{
 use traitor_core::trait_definition::TRAITS_DIRECTORY;
 use traitor_core::verdict::Answer;
 
+use crate::error::warn_if_not_cached;
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
@@ -15,6 +16,7 @@ pub(crate) async fn run(traits: &[String]) -> CommandResult {
     let session = Session::in_current_directory()?;
     let report = test_cases(&session.repository, traits, &session.judge, &session.store).await?;
     print_case_report(&report);
+    warn_if_not_cached(report.cache_write_error.as_ref());
     Ok(if report.all_hold() {
         Outcome::Success
     } else {

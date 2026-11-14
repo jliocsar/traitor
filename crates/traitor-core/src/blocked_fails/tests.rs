@@ -48,6 +48,7 @@ fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
         snippet_count: findings.len(),
         findings,
         non_utf8_paths: Vec::new(),
+        cache_write_error: None,
     }
 }
 
@@ -121,7 +122,9 @@ fn each_session_keeps_its_own_blocked_fails() {
     let cache = TempDir::new().unwrap();
     let blocked_fails = BlockedFails::new(&JsonStore::at(cache.path().to_path_buf()));
     let fails = BTreeSet::from(["a".to_string()]);
-    blocked_fails.write(&session("session/../odd"), &fails);
+    blocked_fails
+        .write(&session("session/../odd"), &fails)
+        .unwrap();
 
     assert!(blocked_fails.read(&session("another")).is_empty());
     assert_eq!(blocked_fails.read(&session("session/../odd")), fails);
@@ -141,7 +144,9 @@ fn a_checked_session_has_new_fails_once() {
     let stop = || {
         let report = block_on(check(&repository, None, &FakeJudge::new(), &store)).unwrap();
         let fails = fails_of(&report, &blocked_fails.read(&session("session")));
-        blocked_fails.write(&session("session"), &fails.identities);
+        blocked_fails
+            .write(&session("session"), &fails.identities)
+            .unwrap();
         fails.any_new
     };
 
