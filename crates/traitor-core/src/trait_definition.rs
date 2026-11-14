@@ -1,3 +1,5 @@
+//! A trait as written in `.agents/traits/<slug>/TRAIT.md`: its frontmatter and what it expects.
+
 use std::fs::{self, DirEntry};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -56,6 +58,12 @@ struct Frontmatter {
 }
 
 impl TraitDefinition {
+    /// The trait `slug`, from the contents of its `TRAIT.md` at `path`.
+    ///
+    /// # Errors
+    ///
+    /// When the frontmatter is missing or invalid, the body that says what it expects is empty,
+    /// or a path glob is invalid.
     pub fn parse(slug: &str, path: &Path, contents: &str) -> Result<Self, TraitDefinitionError> {
         let (frontmatter, body) =
             split_frontmatter(contents).context(MissingFrontmatterSnafu { path })?;
@@ -73,6 +81,7 @@ impl TraitDefinition {
         })
     }
 
+    #[must_use]
     pub fn label(&self) -> String {
         format!("{} ({})", self.title, self.slug)
     }
@@ -90,9 +99,11 @@ pub(crate) fn load_trait_definitions(
     repository_root: &Path,
 ) -> Result<Vec<TraitDefinition>, TraitDefinitionError> {
     let directory = repository_root.join(TRAITS_DIRECTORY);
+
     if !directory.is_dir() {
         return Ok(Vec::new());
     }
+
     visible_entries(&directory)
         .context(ListTraitsSnafu {
             directory: &directory,
@@ -121,12 +132,15 @@ fn split_frontmatter(contents: &str) -> Option<(&str, &str)> {
         .strip_prefix("---\n")
         .or_else(|| contents.strip_prefix("---\r\n"))?;
     let mut offset = 0;
+
     for line in rest.split_inclusive('\n') {
         if line.trim_end() == "---" {
             return Some((&rest[..offset], &rest[offset + line.len()..]));
         }
+
         offset += line.len();
     }
+
     None
 }
 

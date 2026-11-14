@@ -1,4 +1,5 @@
-use std::fmt::Write as _;
+//! A directory of JSON files, keyed by name, for the verdict cache and the Stop hook's blocked fails.
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -8,12 +9,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
 #[derive(Clone)]
 pub struct JsonStore {
     directory: Option<PathBuf>,
 }
 
 impl JsonStore {
+    #[must_use]
     pub fn in_user_cache_directory() -> Self {
         Self {
             directory: dirs::cache_dir().map(|cache| cache.join("traitor").join("v1")),
@@ -58,8 +62,15 @@ fn write_atomically<T: Serialize>(directory: &Path, name: &str, value: &T) -> io
 pub(crate) fn hex_sha256(material: &[u8]) -> String {
     Sha256::digest(material)
         .iter()
-        .fold(String::with_capacity(64), |mut hex, byte| {
-            let _ = write!(hex, "{byte:02x}");
-            hex
+        .flat_map(|byte| {
+            [
+                HEX_DIGITS[usize::from(byte >> 4)],
+                HEX_DIGITS[usize::from(byte & 0x0f)],
+            ]
         })
+        .map(char::from)
+        .collect()
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,3 +1,5 @@
+//! A judge's verdict on one trait and one snippet.
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};

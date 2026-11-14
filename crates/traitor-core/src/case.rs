@@ -1,3 +1,5 @@
+//! A trait's cases: snippets in its pass/ and fail/ folders, judged to check that the trait reads as meant.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,10 +14,12 @@ use crate::verdict::{Answer, Verdict};
 
 pub const PASS_CASES_DIRECTORY: &str = "pass";
 pub const FAIL_CASES_DIRECTORY: &str = "fail";
+
 const CASE_DIRECTORIES: [(&str, Answer); 2] = [
     (PASS_CASES_DIRECTORY, Answer::Pass),
     (FAIL_CASES_DIRECTORY, Answer::Fail),
 ];
+
 const CASE_FILE_STEM: &str = "case";
 
 #[derive(Debug, Snafu)]
@@ -41,6 +45,7 @@ pub struct CaseResult<'repository> {
 }
 
 impl CaseResult<'_> {
+    #[must_use]
     pub fn holds(&self) -> bool {
         match self.expected {
             Answer::Pass => matches!(self.verdict.answer, Answer::Pass | Answer::NotApplicable),
@@ -56,6 +61,7 @@ pub struct CaseReport<'repository> {
 }
 
 impl CaseReport<'_> {
+    #[must_use]
     pub fn all_hold(&self) -> bool {
         self.results.iter().all(CaseResult::holds)
     }
@@ -78,6 +84,11 @@ impl<'repository> Case<'repository> {
     }
 }
 
+/// Judges the cases of the traits named in `slugs`, or of every trait when it's empty.
+///
+/// # Errors
+///
+/// When a trait doesn't exist, a case can't be read, or the judge can't give a verdict.
 pub async fn test_cases<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
     slugs: &[String],
@@ -90,6 +101,7 @@ pub async fn test_cases<'repository, J: Judge>(
     {
         return UnknownTraitSnafu { slug }.fail();
     }
+
     let chosen = repository
         .definitions()
         .iter()
@@ -97,11 +109,14 @@ pub async fn test_cases<'repository, J: Judge>(
 
     let mut cases = Vec::new();
     let mut traits_without_cases = Vec::new();
+
     for definition in chosen {
         let found = cases_of(definition)?;
+
         if found.is_empty() {
             traits_without_cases.push(definition.slug.as_str());
         }
+
         cases.extend(found);
     }
 
@@ -126,15 +141,19 @@ pub async fn test_cases<'repository, J: Judge>(
 
 fn cases_of(definition: &TraitDefinition) -> Result<Vec<Case<'_>>, CaseError> {
     let mut cases = Vec::new();
+
     for (folder, expected) in CASE_DIRECTORIES {
         let directory = definition.directory().join(folder);
+
         if !directory.is_dir() {
             continue;
         }
+
         let files = visible_entries(&directory)
             .context(ReadCaseSnafu { path: &directory })?
             .into_iter()
             .filter(|entry| entry.path().is_file());
+
         for file in files {
             let name = file.file_name().to_string_lossy().into_owned();
             let path = file.path();
@@ -148,6 +167,7 @@ fn cases_of(definition: &TraitDefinition) -> Result<Vec<Case<'_>>, CaseError> {
             });
         }
     }
+
     Ok(cases)
 }
 

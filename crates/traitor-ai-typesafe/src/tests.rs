@@ -1,3 +1,5 @@
+//! Tests for the request body sent to Jev and how its answers are read.
+
 use std::path::Path;
 
 use traitor_core::trait_definition::TraitDefinition;
@@ -38,6 +40,7 @@ fn reads_a_choice_answer_as_a_verdict() {
     )
     .unwrap();
     let verdicts = verdicts(response);
+
     assert_eq!(verdicts["railway-not-guards"].answer, Answer::NotApplicable);
     assert_eq!(
         verdicts["railway-not-guards"].probabilities.not_applicable,
@@ -49,6 +52,7 @@ fn reads_a_choice_answer_as_a_verdict() {
 fn a_long_error_body_is_cut_on_a_character() {
     let body = "é".repeat(ERROR_BODY_CHARS + 50);
     let shown = shorten(&body);
+
     assert_eq!(shown.chars().count(), ERROR_BODY_CHARS + 1);
     assert!(shown.ends_with('…'));
 }

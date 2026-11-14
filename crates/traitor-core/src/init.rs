@@ -1,8 +1,11 @@
+//! Creating a repo's config, or upgrading it to this traitor's version.
+
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use semver::Version;
+// ast-grep-ignore: no-untyped-json -- upgrading a config has to keep the keys this traitor doesn't know
 use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu};
 
@@ -48,6 +51,11 @@ pub enum InitError {
     },
     #[snafu(transparent)]
     Config { source: ConfigError },
+    #[snafu(display("couldn't write {} as JSON: {source}", path.display()))]
+    SerializeConfig {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,12 +66,21 @@ pub enum InitOutcome {
     AddedSchema,
 }
 
+/// Writes a new config in the repository around `directory`, or upgrades the one there to
+/// `binary_version`.
+///
+/// # Errors
+///
+/// When there's no repository, the config can't be read, parsed or written, or it's for a
+/// newer traitor.
 pub fn init(directory: &Path, binary_version: &Version) -> Result<InitOutcome, InitError> {
     let repository = Repository::discover(directory)?;
     let path = repository.root().join(CONFIG_PATH);
+
     if let Some(contents) = read_if_present(&path)? {
         return upgrade(&path, &contents, binary_version);
     }
+
     write_config(&path, &new_config_file(binary_version))?;
     Ok(InitOutcome::Created)
 }
@@ -74,10 +91,13 @@ fn upgrade(
     binary_version: &Version,
 ) -> Result<InitOutcome, InitError> {
     let value: Value = serde_json::from_slice(contents).context(InvalidJsonSnafu { path })?;
+
     let Value::Object(mut config) = value else {
         return NotAnObjectSnafu { path }.fail();
     };
+
     let current_url = schema_url(binary_version);
+
     let outcome = match config.get(SCHEMA_KEY) {
         None => InitOutcome::AddedSchema,
         Some(url) => {
@@ -87,9 +107,11 @@ fn upgrade(
                 url,
                 expected: &current_url,
             })?;
+
             match config_version.cmp(binary_version) {
                 Ordering::Equal => {
                     Config::parse(path, contents)?;
+
                     return Ok(InitOutcome::AlreadyCurrent);
                 }
                 Ordering::Greater => {
@@ -106,18 +128,22 @@ fn upgrade(
             }
         }
     };
+
     config.shift_insert(0, SCHEMA_KEY.to_string(), Value::String(current_url));
     write_config(path, &config)?;
     Ok(outcome)
 }
 
 fn write_config(path: &Path, config: &Map<String, Value>) -> Result<(), InitError> {
-    let mut contents = serde_json::to_string_pretty(config).expect("a JSON map always serializes");
+    let mut contents =
+        serde_json::to_string_pretty(config).context(SerializeConfigSnafu { path })?;
     contents.push('\n');
     Config::parse(path, contents.as_bytes())?;
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).context(WriteConfigSnafu { path })?;
     }
+
     fs::write(path, contents).context(WriteConfigSnafu { path })
 }
 

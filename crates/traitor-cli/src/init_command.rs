@@ -1,3 +1,5 @@
+//! `traitor init`: sets traitor up in a repo or upgrades its config.
+
 use std::env;
 
 use semver::Version;
@@ -10,8 +12,9 @@ use traitor_core::trait_definition::{TRAIT_FILE, TRAITS_DIRECTORY};
 use crate::error::{CurrentDirectorySnafu, OwnVersionSnafu};
 use crate::{CommandResult, Outcome};
 
-pub fn run() -> CommandResult {
+pub(crate) fn run() -> CommandResult {
     let version = Version::parse(env!("CARGO_PKG_VERSION")).context(OwnVersionSnafu)?;
+
     match init(
         &env::current_dir().context(CurrentDirectorySnafu)?,
         &version,
@@ -38,5 +41,6 @@ pub fn run() -> CommandResult {
             println!("Pinned {CONFIG_PATH} to traitor {version}'s schema.");
         }
     }
+
     Ok(Outcome::Success)
 }

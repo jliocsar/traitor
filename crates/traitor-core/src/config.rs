@@ -1,3 +1,5 @@
+//! A repo's traitor settings in `.agents/traitor.json`: each trait's threshold and exemptions.
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
@@ -8,6 +10,7 @@ use globset::GlobSet;
 use schemars::JsonSchema;
 use semver::Version;
 use serde::Deserialize;
+// ast-grep-ignore: no-untyped-json -- a new config is written as the same open map an upgrade keeps
 use serde_json::{Map, Value};
 use snafu::{OptionExt, ResultExt, Snafu, ensure};
 
@@ -15,6 +18,7 @@ use crate::glob::{GlobError, compile_globs};
 
 pub const CONFIG_PATH: &str = ".agents/traitor.json";
 pub(crate) const SCHEMA_KEY: &str = "$schema";
+
 const SCHEMA_URL_PREFIX: &str = "https://raw.githubusercontent.com/jliocsar/traitor/v";
 const SCHEMA_URL_SUFFIX: &str = "/schema/traitor.schema.json";
 
@@ -170,6 +174,42 @@ impl Config {
     }
 }
 
+impl TraitPolicy {
+    fn from_settings(
+        path: &Path,
+        slug: &str,
+        settings: TraitSettingsFile,
+    ) -> Result<Self, ConfigError> {
+        if let Some(threshold) = settings.threshold {
+            ensure!(
+                (0.0..=1.0).contains(&threshold),
+                ThresholdOutOfRangeSnafu {
+                    path,
+                    slug,
+                    threshold
+                }
+            );
+        }
+
+        ensure!(
+            settings
+                .exempt
+                .iter()
+                .all(|exemption| !exemption.reason.trim().is_empty()),
+            MissingReasonSnafu { path, slug }
+        );
+        let globs: Vec<String> = settings
+            .exempt
+            .into_iter()
+            .flat_map(|exemption| exemption.paths)
+            .collect();
+        Ok(Self {
+            threshold: settings.threshold,
+            exempt: compile_globs(path, &globs)?,
+        })
+    }
+}
+
 pub(crate) fn read_if_present(path: &Path) -> Result<Option<Vec<u8>>, ConfigError> {
     match fs::read(path) {
         Ok(contents) => Ok(Some(contents)),
@@ -197,41 +237,6 @@ pub(crate) fn new_config_file(version: &Version) -> Map<String, Value> {
         (SCHEMA_KEY.to_string(), Value::String(schema_url(version))),
         ("traits".to_string(), Value::Object(Map::new())),
     ])
-}
-
-impl TraitPolicy {
-    fn from_settings(
-        path: &Path,
-        slug: &str,
-        settings: TraitSettingsFile,
-    ) -> Result<Self, ConfigError> {
-        if let Some(threshold) = settings.threshold {
-            ensure!(
-                (0.0..=1.0).contains(&threshold),
-                ThresholdOutOfRangeSnafu {
-                    path,
-                    slug,
-                    threshold
-                }
-            );
-        }
-        ensure!(
-            settings
-                .exempt
-                .iter()
-                .all(|exemption| !exemption.reason.trim().is_empty()),
-            MissingReasonSnafu { path, slug }
-        );
-        let globs: Vec<String> = settings
-            .exempt
-            .into_iter()
-            .flat_map(|exemption| exemption.paths)
-            .collect();
-        Ok(Self {
-            threshold: settings.threshold,
-            exempt: compile_globs(path, &globs)?,
-        })
-    }
 }
 
 #[cfg(test)]

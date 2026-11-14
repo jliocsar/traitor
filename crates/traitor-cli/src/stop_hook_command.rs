@@ -1,23 +1,25 @@
+//! `traitor check --format claude-code-hook`: the Claude Code Stop hook, which blocks an agent once on each new fail.
+
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::fmt::Write as _;
+use std::fmt;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
-use traitor_core::blocked_fails::{BlockedFails, SessionFails, session_fails};
+use traitor_core::blocked_fails::{BlockedFails, SessionFails, SessionId, session_fails};
 use traitor_core::check::{Finding, Report, check};
 use traitor_core::verdict::Answer;
 
-use crate::error::{CliError, error_chain};
+use crate::error::{CliError, FailIdentitySnafu, HookOutputSnafu, error_chain};
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
 /// What Claude Code sends a Stop hook on stdin, as far as traitor reads it.
 #[derive(Debug, Deserialize)]
 struct StopHookInput {
-    session_id: String,
+    session_id: SessionId,
     cwd: PathBuf,
 }
 
@@ -55,16 +57,105 @@ enum InputError {
     Parse { source: serde_json::Error },
 }
 
-pub async fn run(revision: Option<&str>) -> CommandResult {
+/// What Claude reads when it's blocked: each failing trait and where it fails, then the snippets
+/// Jev was unsure about.
+struct BlockReason<'a> {
+    failing: &'a [&'a Finding<'a>],
+    report: &'a Report<'a>,
+}
+
+impl fmt::Display for BlockReason<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(
+            "traitor found changed code that breaks this repo's traits. Fix each one. If you think a verdict is wrong, tell the user why instead of working around it.\n",
+        )?;
+        let mut by_trait: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
+
+        for finding in self.failing {
+            by_trait
+                .entry(finding.definition.slug.as_str())
+                .or_default()
+                .push(finding);
+        }
+
+        for findings in by_trait.into_values() {
+            let definition = findings[0].definition;
+            write!(
+                formatter,
+                "\n{}\nwhy: {}\nexpect: {}\n",
+                definition.label(),
+                definition.why,
+                definition.expect
+            )?;
+
+            for finding in findings {
+                writeln!(
+                    formatter,
+                    "- {}, p(fail) {:.2}",
+                    finding.location(),
+                    finding.verdict.probabilities.fail
+                )?;
+            }
+        }
+
+        let unsure: Vec<&Finding> = self
+            .report
+            .findings
+            .iter()
+            .filter(|finding| finding.verdict.answer == Answer::Unsure)
+            .collect();
+
+        if !unsure.is_empty() {
+            formatter.write_str("\nJev couldn't tell for these from the snippet alone. Read them against the trait yourself:\n")?;
+
+            for finding in unsure {
+                writeln!(
+                    formatter,
+                    "- {} at {}",
+                    finding.definition.label(),
+                    finding.location()
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// What the user sees when the agent stops with fails it was already blocked on.
+struct StillFailing<'a> {
+    failing: &'a [&'a Finding<'a>],
+}
+
+impl fmt::Display for StillFailing<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .write_str("traitor: these still fail, and the agent was already told about them:")?;
+
+        for finding in self.failing {
+            write!(
+                formatter,
+                "\n- {} at {}",
+                finding.definition.label(),
+                finding.location()
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
     let output = match read_input(io::stdin()) {
         Ok(input) => respond(&input, revision)
             .await
             .unwrap_or_else(|error| StopHookOutput::could_not_check(&error)),
         Err(error) => StopHookOutput::could_not_check(&error),
     };
+
     println!(
         "{}",
-        serde_json::to_string(&output).expect("hook output always serializes")
+        serde_json::to_string(&output).context(HookOutputSnafu)?
     );
     Ok(Outcome::Success)
 }
@@ -82,6 +173,7 @@ async fn respond(
     let Some(session) = Session::if_it_has_traits(&input.cwd)? else {
         return Ok(StopHookOutput::default());
     };
+
     let report = check(
         &session.repository,
         revision,
@@ -90,7 +182,8 @@ async fn respond(
     )
     .await?;
     let blocked_fails = BlockedFails::new(&session.store);
-    let fails = session_fails(&report, &blocked_fails.read(&input.session_id));
+    let fails = session_fails(&report, &blocked_fails.read(&input.session_id))
+        .context(FailIdentitySnafu)?;
     blocked_fails.write(&input.session_id, &fails.identities);
     Ok(output(&report, &fails))
 }
@@ -101,77 +194,26 @@ fn output(report: &Report, fails: &SessionFails) -> StopHookOutput {
     } else if fails.any_new {
         StopHookOutput {
             decision: Some(Decision::Block),
-            reason: Some(block_reason(&fails.failing, report)),
+            reason: Some(
+                BlockReason {
+                    failing: &fails.failing,
+                    report,
+                }
+                .to_string(),
+            ),
             system_message: None,
         }
     } else {
         StopHookOutput {
-            system_message: Some(still_failing_message(&fails.failing)),
+            system_message: Some(
+                StillFailing {
+                    failing: &fails.failing,
+                }
+                .to_string(),
+            ),
             ..StopHookOutput::default()
         }
     }
-}
-
-fn block_reason(failing: &[&Finding], report: &Report) -> String {
-    let mut reason = String::from(
-        "traitor found changed code that breaks this repo's traits. Fix each one. If you think a verdict is wrong, tell the user why instead of working around it.\n",
-    );
-    let mut by_trait: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
-    for finding in failing {
-        by_trait
-            .entry(finding.definition.slug.as_str())
-            .or_default()
-            .push(finding);
-    }
-    for findings in by_trait.into_values() {
-        let definition = findings[0].definition;
-        let _ = write!(
-            reason,
-            "\n{}\nwhy: {}\nexpect: {}\n",
-            definition.label(),
-            definition.why,
-            definition.expect
-        );
-        for finding in findings {
-            let _ = writeln!(
-                reason,
-                "- {}, p(fail) {:.2}",
-                finding.location(),
-                finding.verdict.probabilities.fail
-            );
-        }
-    }
-    let unsure: Vec<&Finding> = report
-        .findings
-        .iter()
-        .filter(|finding| finding.verdict.answer == Answer::Unsure)
-        .collect();
-    if !unsure.is_empty() {
-        reason.push_str("\nJev couldn't tell for these from the snippet alone. Read them against the trait yourself:\n");
-        for finding in unsure {
-            let _ = writeln!(
-                reason,
-                "- {} at {}",
-                finding.definition.label(),
-                finding.location()
-            );
-        }
-    }
-    reason
-}
-
-fn still_failing_message(failing: &[&Finding]) -> String {
-    let mut message =
-        String::from("traitor: these still fail, and the agent was already told about them:");
-    for finding in failing {
-        let _ = write!(
-            message,
-            "\n- {} at {}",
-            finding.definition.label(),
-            finding.location()
-        );
-    }
-    message
 }
 
 #[cfg(test)]

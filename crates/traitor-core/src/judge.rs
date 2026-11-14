@@ -1,7 +1,9 @@
+//! Asking a judge for verdicts, through a cache keyed by the model, the question and the snippet.
+
 use std::collections::BTreeMap;
 
 use futures::{StreamExt, TryStreamExt, stream};
-use snafu::{OptionExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 
 use crate::question::{Question, SnippetState};
 use crate::store::{JsonStore, hex_sha256};
@@ -42,8 +44,11 @@ pub trait Judge {
 pub enum JudgingError {
     #[snafu(display("{source}"))]
     Judge {
+        // ast-grep-ignore: no-box-dyn-error -- a type parameter for J::Error would thread through every caller's error for no caller's benefit
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+    #[snafu(display("couldn't build a cache key: {source}"))]
+    CacheKey { source: serde_json::Error },
     #[snafu(display("the judge answered without a verdict for {slug}"))]
     MissingVerdict { slug: String },
 }
@@ -71,13 +76,17 @@ pub(crate) async fn judge_through_cache<'repository, T, J: Judge>(
         let requests: Vec<JudgeRequest> = items.iter().map(request).collect();
         judge_requests(judge, store, &requests).await?
     };
+
     Ok(items.into_iter().zip(judged).collect())
 }
 
-fn cache_key(model: &str, question: &Question, state: &SnippetState) -> String {
-    let material = serde_json::to_vec(&(model, question, state))
-        .expect("a question and a snippet always serialize");
-    hex_sha256(&material)
+fn cache_key(
+    model: &str,
+    question: &Question,
+    state: &SnippetState,
+) -> Result<String, JudgingError> {
+    let material = serde_json::to_vec(&(model, question, state)).context(CacheKeySnafu)?;
+    Ok(hex_sha256(&material))
 }
 
 async fn judge_requests<'repository, J: Judge>(
@@ -93,16 +102,16 @@ async fn judge_requests<'repository, J: Judge>(
                 .iter()
                 .map(|definition| {
                     let key =
-                        cache_key(judge.model(), &Question::about(definition), &request.state);
-                    CachedQuestion {
+                        cache_key(judge.model(), &Question::about(definition), &request.state)?;
+                    Ok(CachedQuestion {
                         definition,
                         verdict: store.read(&key),
                         key,
-                    }
+                    })
                 })
-                .collect()
+                .collect::<Result<_, JudgingError>>()
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
     let uncached: Vec<(usize, JudgeRequest)> = requests
         .iter()
         .zip(&cached)
@@ -126,11 +135,13 @@ async fn judge_requests<'repository, J: Judge>(
     let mut answers: BTreeMap<usize, BTreeMap<String, Verdict>> = stream::iter(uncached)
         .map(|(index, request)| async move {
             let verdicts = judge.judge(&request).await?;
+
             for question in &asked[index] {
                 if let Some(verdict) = verdicts.get(&question.definition.slug) {
                     store.write_best_effort(&question.key, verdict);
                 }
             }
+
             Ok::<_, J::Error>((index, verdicts))
         })
         .buffer_unordered(CONCURRENT_REQUESTS)
@@ -153,6 +164,7 @@ async fn judge_requests<'repository, J: Judge>(
                             from_cache: true,
                         });
                     }
+
                     let verdict = answers
                         .get_mut(&index)
                         .and_then(|verdicts| verdicts.remove(&question.definition.slug))

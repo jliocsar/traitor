@@ -1,3 +1,5 @@
+//! Tests for reading `.agents/traitor.json` and keeping its schema current.
+
 use std::assert_matches;
 use std::fs;
 
@@ -20,10 +22,13 @@ fn config_json_schema() -> String {
 #[test]
 fn committed_schema_is_current() {
     let generated = config_json_schema();
+
     if std::env::var_os("TRAITOR_WRITE_SCHEMA").is_some() {
         fs::write(COMMITTED_SCHEMA, &generated).unwrap();
     }
+
     let committed = fs::read_to_string(COMMITTED_SCHEMA).unwrap_or_default();
+
     assert!(
         committed == generated,
         "schema/traitor.schema.json is out of date. Run `TRAITOR_WRITE_SCHEMA=1 cargo test -p traitor-core committed_schema` and commit it."
@@ -33,6 +38,7 @@ fn committed_schema_is_current() {
 #[test]
 fn rejects_a_blank_reason() {
     let contents = br#"{"traits":{"x":{"exempt":[{"paths":["a/**"],"reason":" "}]}}}"#;
+
     assert_matches!(
         Config::parse(Path::new(CONFIG_PATH), contents),
         Err(ConfigError::MissingReason { .. })

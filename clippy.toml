@@ -1,0 +1,28 @@
+# begone-slop clippy preset. `cargo bs init` writes this file into a project.
+
+# Two characters at least, with the loop counters as the only exceptions.
+min-ident-chars-threshold = 1
+allowed-idents-below-min-chars = ["i", "j"]
+
+excessive-nesting-threshold = 5
+too-many-arguments-threshold = 5
+
+# A panic in a test is the failure report.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+
+# begone-slop's statement-order, read by rustc: imports, constants, types with their impls,
+# then free functions. Only the groups are ordered; nothing is sorted alphabetically.
+source-item-ordering = ["module"]
+module-items-ordered-within-groupings = "none"
+module-item-order-groupings = [
+    ["modules", ["extern_crate", "mod", "foreign_mod"]],
+    ["use", ["use"]],
+    ["macros", ["macro"]],
+    ["global_asm", ["global_asm"]],
+    ["constants", ["static", "const"]],
+    ["types", ["ty_alias", "enum", "struct", "union", "trait", "trait_alias", "impl"]],
+    ["functions", ["fn"]],
+]

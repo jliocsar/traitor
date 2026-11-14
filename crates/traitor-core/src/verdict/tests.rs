@@ -1,3 +1,5 @@
+//! Tests for how an answer is shown.
+
 use super::*;
 
 #[test]

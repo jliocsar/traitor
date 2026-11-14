@@ -1,3 +1,5 @@
+//! Path globs for traits and exemptions, where `*` stops at a slash and `**` crosses them.
+
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};

@@ -1,3 +1,5 @@
+//! What changed, read from git: the comparison to judge, the changed files and their contents.
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -58,6 +60,12 @@ impl ChangedFiles {
     }
 }
 
+/// A path that isn't valid UTF-8, shown as near as it can be.
+#[derive(Debug)]
+struct NonUtf8Path {
+    shown: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Comparison {
     base: String,
@@ -91,20 +99,24 @@ impl Repository {
                 head: None,
             });
         };
+
         if let Some((from, to)) = revision.split_once("...") {
             let to = or_head(to);
             let base = self.git(&["merge-base", "--end-of-options", or_head(from), to])?;
+
             return Ok(Comparison {
                 base: base.trim_end().to_string(),
                 head: Some(to.to_string()),
             });
         }
+
         if let Some((from, to)) = revision.split_once("..") {
             return Ok(Comparison {
                 base: or_head(from).to_string(),
                 head: Some(or_head(to).to_string()),
             });
         }
+
         Ok(Comparison {
             base: revision.to_string(),
             head: None,
@@ -131,9 +143,11 @@ impl Repository {
         arguments.extend(comparison.head.as_deref());
         arguments.push("--");
         let mut changed = parse_diff(&self.git(&arguments)?);
+
         if comparison.head.is_none() {
             changed.extend(self.untracked_files()?);
         }
+
         changed
             .files
             .sort_by(|left, right| left.path.cmp(&right.path));
@@ -151,6 +165,7 @@ impl Repository {
                 .map(text_from_bytes)
                 .context(ReadWorkingTreeSnafu { path })?,
         };
+
         Ok((!looks_binary(&text)).then_some(text))
     }
 
@@ -158,6 +173,7 @@ impl Repository {
         let Ok(head) = self.git(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) else {
             return EMPTY_TREE.to_string();
         };
+
         ["@{upstream}", "origin/HEAD"]
             .iter()
             .find_map(|reference| self.git(&["merge-base", "HEAD", reference]).ok())
@@ -185,7 +201,11 @@ impl Repository {
                     changes: vec![Change::WHOLE_FILE],
                 })
                 .collect(),
-            non_utf8_paths: non_utf8_paths.into_iter().filter_map(Result::err).collect(),
+            non_utf8_paths: non_utf8_paths
+                .into_iter()
+                .filter_map(Result::err)
+                .map(|path| path.shown)
+                .collect(),
         })
     }
 
@@ -214,6 +234,7 @@ fn run_git_bytes(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitErr
         .stdin(Stdio::null())
         .output()
         .context(SpawnSnafu)?;
+
     if !output.status.success() {
         return FailedSnafu {
             arguments: arguments.join(" "),
@@ -221,12 +242,15 @@ fn run_git_bytes(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, GitErr
         }
         .fail();
     }
+
     Ok(output.stdout)
 }
 
 /// The path, or when it isn't valid UTF-8, the nearest it can be shown as.
-fn utf8_path(bytes: Vec<u8>) -> Result<String, String> {
-    String::from_utf8(bytes).map_err(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+fn utf8_path(bytes: Vec<u8>) -> Result<String, NonUtf8Path> {
+    String::from_utf8(bytes).map_err(|error| NonUtf8Path {
+        shown: String::from_utf8_lossy(error.as_bytes()).into_owned(),
+    })
 }
 
 fn text_from_bytes(bytes: Vec<u8>) -> String {
@@ -245,6 +269,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
     let mut changed = ChangedFiles::default();
     let mut current: Option<ChangedFile> = None;
     let mut in_file_header = false;
+
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
             changed.files.extend(current.take());
@@ -255,7 +280,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
                     path,
                     changes: Vec::new(),
                 }),
-                Some(Err(shown)) => {
+                Some(Err(NonUtf8Path { shown })) => {
                     changed.non_utf8_paths.push(shown);
                     None
                 }
@@ -263,6 +288,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
             };
         } else if let Some(header) = line.strip_prefix("@@ ") {
             in_file_header = false;
+
             if let Some(file) = current.as_mut()
                 && let Some(range) = parse_hunk_header(header)
             {
@@ -270,6 +296,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
             }
         }
     }
+
     changed.files.extend(current);
     changed.files.retain(|file| !file.changes.is_empty());
     changed
@@ -277,13 +304,15 @@ fn parse_diff(diff: &str) -> ChangedFiles {
 
 /// The path in a `+++` header: none when the header can't be read, and an error with the
 /// nearest it can be shown as when the path isn't valid UTF-8.
-fn new_path(header_path: &str) -> Option<Result<String, String>> {
+fn new_path(header_path: &str) -> Option<Result<String, NonUtf8Path>> {
     let header_path = header_path.strip_suffix('\t').unwrap_or(header_path);
+
     let bytes = if header_path.starts_with('"') {
         unquote(header_path)?
     } else {
         header_path.as_bytes().to_vec()
     };
+
     let path = bytes.strip_prefix(b"b/")?;
     Some(utf8_path(path.to_vec()))
 }
@@ -291,11 +320,13 @@ fn new_path(header_path: &str) -> Option<Result<String, String>> {
 fn unquote(quoted: &str) -> Option<Vec<u8>> {
     let mut escaped = quoted.strip_prefix('"')?.strip_suffix('"')?.bytes();
     let mut bytes = Vec::new();
+
     while let Some(byte) = escaped.next() {
         if byte != b'\\' {
             bytes.push(byte);
             continue;
         }
+
         bytes.push(match escaped.next()? {
             b'a' => 0x07,
             b'b' => 0x08,
@@ -312,6 +343,7 @@ fn unquote(quoted: &str) -> Option<Vec<u8>> {
             other => other,
         });
     }
+
     Some(bytes)
 }
 
@@ -321,10 +353,12 @@ fn is_octal_digit(byte: u8) -> bool {
 
 fn parse_hunk_header(header: &str) -> Option<Change> {
     let added = header.split(' ').nth(1)?.strip_prefix('+')?;
+
     let (start, count): (usize, usize) = match added.split_once(',') {
         Some((start, count)) => (start.parse().ok()?, count.parse().ok()?),
         None => (added.parse().ok()?, 1),
     };
+
     Some(match count {
         0 => Change::Deleted { after: start },
         _ => Change::Added(LineRange {

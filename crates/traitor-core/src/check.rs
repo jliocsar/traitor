@@ -1,3 +1,5 @@
+//! Judging every changed snippet against the traits whose paths match it.
+
 use snafu::Snafu;
 
 use crate::climb::{Snippet, snippets_for_changes};
@@ -28,11 +30,13 @@ pub struct Finding<'repository> {
 }
 
 impl Finding<'_> {
+    #[must_use]
     pub fn fails_check(&self) -> bool {
         self.threshold
             .is_some_and(|threshold| self.verdict.probabilities.fail >= threshold)
     }
 
+    #[must_use]
     pub fn location(&self) -> String {
         format!(
             "{}:{}-{}",
@@ -50,11 +54,13 @@ pub struct Report<'repository> {
 }
 
 impl Report<'_> {
+    #[must_use]
     pub fn fails_check(&self) -> bool {
         self.findings.iter().any(Finding::fails_check)
     }
 
     /// Whether there are fails, and none of their traits has a threshold to fail the check with.
+    #[must_use]
     pub fn fails_are_only_reported(&self) -> bool {
         let mut fails = self
             .findings
@@ -84,6 +90,11 @@ impl<'repository> ChangedSnippet<'repository> {
     }
 }
 
+/// Judges every snippet that changed in `revision` against the traits whose paths match it.
+///
+/// # Errors
+///
+/// When git fails, or the judge can't give a verdict.
 pub async fn check<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
     revision: Option<&str>,
@@ -94,14 +105,18 @@ pub async fn check<'repository, J: Judge>(
     let comparison = git.resolve_comparison(revision)?;
     let changed_files = git.changed_files(&comparison)?;
     let mut changed = Vec::new();
+
     for file in changed_files.files {
         let traits = repository.traits_for(&file.path);
+
         if traits.is_empty() {
             continue;
         }
+
         let Some(source) = git.read_file(&comparison, &file.path)? else {
             continue;
         };
+
         changed.extend(
             snippets_for_changes(&file.path, &source, &file.changes)
                 .into_iter()

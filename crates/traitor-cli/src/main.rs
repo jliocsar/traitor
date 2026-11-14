@@ -1,3 +1,5 @@
+//! The `traitor` command line: parses arguments, runs a command and maps its outcome to an exit code.
+
 mod check_command;
 mod error;
 mod init_command;
@@ -29,7 +31,9 @@ enum Format {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Set traitor up in this repo, or upgrade its config to this traitor's version. Setting up is how a repo agrees to send its code to TypeSafe.
+    #[command(
+        about = "Set traitor up in this repo, or upgrade its config to this traitor's version. Setting up is how a repo agrees to send its code to TypeSafe."
+    )]
     Init,
     /// Judge every changed snippet against the traits whose paths match it.
     Check {
@@ -67,6 +71,7 @@ async fn main() -> ExitCode {
         } => ("check", stop_hook_command::run(revision.as_deref()).await),
         Command::Test { traits } => ("test", test_command::run(&traits).await),
     };
+
     match result {
         Ok(Outcome::Success) => ExitCode::SUCCESS,
         Ok(Outcome::TraitBroken) => ExitCode::from(EXIT_TRAIT_BROKEN),

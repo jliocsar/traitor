@@ -1,3 +1,5 @@
+//! traitor's core: reads a repo's traits and changes, and has a judge give each changed snippet a verdict.
+
 mod climb;
 mod git;
 mod glob;

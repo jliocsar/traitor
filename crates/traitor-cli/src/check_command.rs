@@ -1,3 +1,5 @@
+//! `traitor check`: judges changed snippets and prints what fails, as text or GitHub annotations.
+
 use std::env;
 
 use traitor_core::check::{Finding, Report, check};
@@ -7,7 +9,7 @@ use traitor_core::verdict::Answer;
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
-pub async fn run(revision: Option<&str>) -> CommandResult {
+pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
     let session = Session::in_current_directory()?;
     let report = check(
         &session.repository,
@@ -29,12 +31,15 @@ fn print_report(report: &Report) {
     let worth_reading = report.findings.iter().filter(|finding| {
         finding.fails_check() || matches!(finding.verdict.answer, Answer::Fail | Answer::Unsure)
     });
+
     for finding in worth_reading {
         print_finding(finding);
+
         if annotate {
             print_annotation(finding);
         }
     }
+
     let count = |answer: Answer| {
         report
             .findings
@@ -42,6 +47,7 @@ fn print_report(report: &Report) {
             .filter(|finding| finding.verdict.answer == answer)
             .count()
     };
+
     let cached = report
         .findings
         .iter()
@@ -53,12 +59,14 @@ fn print_report(report: &Report) {
         count(Answer::Fail),
         count(Answer::Unsure),
     );
+
     if !report.non_utf8_paths.is_empty() {
         println!(
             "Skipped these changed paths, which aren't valid UTF-8: {}.",
             report.non_utf8_paths.join(", ")
         );
     }
+
     if report.fails_are_only_reported() {
         println!(
             "No failing trait has a threshold in {CONFIG_PATH}, so its fails are reported and don't fail the check."
@@ -75,11 +83,13 @@ fn print_finding(finding: &Finding) {
         finding.verdict.probabilities.fail
     );
     println!("  why: {}", finding.definition.why);
+
     if finding.verdict.answer == Answer::Unsure {
         println!(
             "  Jev couldn't tell from the snippet alone. Read it against the trait yourself rather than skipping it."
         );
     }
+
     println!();
 }
 
@@ -89,6 +99,7 @@ fn print_annotation(finding: &Finding) {
     } else {
         "warning"
     };
+
     println!(
         "::{level} file={},line={},endLine={},title={}::{}",
         escape_annotation_property(&finding.path),

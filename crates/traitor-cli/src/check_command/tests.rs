@@ -1,3 +1,5 @@
+//! Tests for escaping GitHub annotations.
+
 use super::*;
 
 #[test]

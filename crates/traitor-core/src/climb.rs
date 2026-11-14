@@ -1,3 +1,5 @@
+//! Climbing from a changed line to the snippet that encloses it: its function, top-level statement or heading section.
+
 use std::cmp::Reverse;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -9,6 +11,7 @@ use crate::git::{Change, LineRange};
 const BUDGET_TOKENS: usize = 1000;
 const BYTES_PER_TOKEN: usize = 3;
 const LINE_WINDOW: usize = 20;
+
 const FUNCTION_VALUE_KINDS: &[&str] = &[
     "arrow_function",
     "function_expression",
@@ -82,6 +85,7 @@ impl Language {
     fn is_unit(self, node: Node) -> bool {
         match self {
             Self::Markdown => node.kind() == "section",
+            // ast-grep-ignore: no-stringly-match -- tree-sitter names node kinds with strings, and the grammar is the parse
             Self::TypeScript | Self::Tsx | Self::JavaScript => match node.kind() {
                 "function_declaration" | "generator_function_declaration" | "method_definition" => {
                     true
@@ -91,147 +95,6 @@ impl Language {
             },
         }
     }
-}
-
-pub(crate) fn language_name(path: &str) -> &str {
-    Language::from_path(path)
-        .map(Language::name)
-        .or_else(|| Path::new(path).extension().and_then(OsStr::to_str))
-        .unwrap_or("text")
-}
-
-pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change]) -> Vec<Snippet> {
-    let lines = Lines::new(source);
-    let parsed = Language::from_path(path)
-        .and_then(|language| language.parse(source).map(|tree| (language, tree)));
-    let mut selections = Vec::new();
-    let mut unplaced = Vec::new();
-    for (line, start, end) in changes
-        .iter()
-        .flat_map(|change| lines.content_ranges(*change))
-    {
-        let placed = parsed.as_ref().and_then(|(language, tree)| {
-            let covering = tree.root_node().descendant_for_byte_range(start, end)?;
-            select_for_node(*language, covering, source)
-        });
-        match placed {
-            Some(selection) => selections.push(selection),
-            None => unplaced.push(line),
-        }
-    }
-    let windows = lines.windows(unplaced, &selections);
-    selections.extend(windows);
-    merge_overlapping(selections, source)
-        .into_iter()
-        .map(|selection| lines.snippet(selection))
-        .collect()
-}
-
-fn select_for_node(language: Language, covering: Node, source: &str) -> Option<Selection> {
-    let unit = enclosing_unit(language, covering)?;
-    if unit.has_error() {
-        return None;
-    }
-    if fits(unit, source) {
-        return Some(Selection::of(unit, None));
-    }
-    let block = largest_fitting(covering, unit, source)?;
-    Some(Selection::of(block, Some(signature(unit, source))))
-}
-
-fn enclosing_unit(language: Language, covering: Node) -> Option<Node> {
-    let mut node = covering;
-    loop {
-        if language.is_unit(node) {
-            return Some(
-                node.parent()
-                    .filter(|parent| parent.kind() == "export_statement")
-                    .unwrap_or(node),
-            );
-        }
-        let parent = node.parent()?;
-        if parent.parent().is_none() {
-            return Some(node);
-        }
-        node = parent;
-    }
-}
-
-fn largest_fitting<'tree>(
-    covering: Node<'tree>,
-    unit: Node<'tree>,
-    source: &str,
-) -> Option<Node<'tree>> {
-    let mut best = None;
-    let mut node = covering;
-    while node != unit && fits(node, source) {
-        best = Some(node);
-        node = node.parent()?;
-    }
-    best
-}
-
-fn estimate_token_count(text: &str) -> usize {
-    text.len().div_ceil(BYTES_PER_TOKEN)
-}
-
-fn fits(node: Node, source: &str) -> bool {
-    estimate_token_count(&source[node.byte_range()]) <= BUDGET_TOKENS
-}
-
-fn signature(unit: Node, source: &str) -> String {
-    let end = function_body(unit).map_or_else(
-        || {
-            source[unit.byte_range()]
-                .find('\n')
-                .map_or(unit.end_byte(), |offset| unit.start_byte() + offset)
-        },
-        |body| body.start_byte(),
-    );
-    source[unit.start_byte()..end].trim_end().to_string()
-}
-
-fn function_body(node: Node) -> Option<Node> {
-    node.child_by_field_name("body")
-        .or_else(|| match node.kind() {
-            "export_statement" => node
-                .child_by_field_name("declaration")
-                .and_then(function_body),
-            "lexical_declaration" | "variable_declaration" => {
-                declared_function(node).and_then(function_body)
-            }
-            _ => None,
-        })
-}
-
-fn declared_function(declaration: Node) -> Option<Node> {
-    let mut cursor = declaration.walk();
-    declaration
-        .named_children(&mut cursor)
-        .filter_map(|declarator| declarator.child_by_field_name("value"))
-        .find(|value| FUNCTION_VALUE_KINDS.contains(&value.kind()))
-}
-
-fn merge_overlapping(mut selections: Vec<Selection>, source: &str) -> Vec<Selection> {
-    selections.sort_by_key(|selection| (selection.start_byte, Reverse(selection.end_byte)));
-    let mut merged: Vec<Selection> = Vec::new();
-    for selection in selections {
-        if let Some(previous) = merged.last_mut() {
-            if selection.end_byte <= previous.end_byte {
-                continue;
-            }
-            if selection.start_byte < previous.end_byte
-                && selection.signature == previous.signature
-                && estimate_token_count(&source[previous.start_byte..selection.end_byte])
-                    <= BUDGET_TOKENS
-            {
-                previous.end_byte = selection.end_byte;
-                continue;
-            }
-        }
-        merged.push(selection);
-    }
-    merged
 }
 
 impl Selection {
@@ -249,9 +112,11 @@ impl<'source> Lines<'source> {
         let mut starts: Vec<usize> = std::iter::once(0)
             .chain(source.match_indices('\n').map(|(index, _)| index + 1))
             .collect();
+
         if starts.len() > 1 && starts.last() == Some(&source.len()) {
             starts.pop();
         }
+
         Self { source, starts }
     }
 
@@ -308,14 +173,17 @@ impl<'source> Lines<'source> {
                 )
             })
             .collect();
+
         let is_taken = |line: usize| {
             taken
                 .iter()
                 .any(|(first, last)| (*first..=*last).contains(&line))
         };
+
         let mut windows = Vec::new();
         let mut previous_last = 0;
         let mut rest = changed.as_slice();
+
         while let Some(&line) = rest.first() {
             let floor = taken
                 .iter()
@@ -324,13 +192,17 @@ impl<'source> Lines<'source> {
                 .fold(previous_last, usize::max)
                 + 1;
             let mut first = line.saturating_sub(LINE_WINDOW).max(floor);
+
             while first < line && !self.lines_fit(first, line) {
                 first += 1;
             }
+
             let mut last = line;
+
             loop {
                 let covered = rest.partition_point(|changed| *changed <= last);
                 let next = last + 1;
+
                 if next > self.starts.len()
                     || next > rest[covered - 1] + LINE_WINDOW
                     || is_taken(next)
@@ -338,8 +210,10 @@ impl<'source> Lines<'source> {
                 {
                     break;
                 }
+
                 last = next;
             }
+
             rest = &rest[rest.partition_point(|changed| *changed <= last)..];
             windows.push(Selection {
                 start_byte: self.byte_range(first).0,
@@ -348,6 +222,7 @@ impl<'source> Lines<'source> {
             });
             previous_last = last;
         }
+
         windows
     }
 
@@ -363,11 +238,13 @@ impl<'source> Lines<'source> {
     fn snippet(&self, selection: Selection) -> Snippet {
         let line_start = self.starts[self.line_of(selection.start_byte) - 1];
         let indent = &self.source[line_start..selection.start_byte];
+
         let start_byte = if indent.trim().is_empty() {
             line_start
         } else {
             selection.start_byte
         };
+
         let text = &self.source[start_byte..selection.end_byte];
         let text = text.trim_end_matches(['\n', '\r']);
         Snippet {
@@ -377,6 +254,164 @@ impl<'source> Lines<'source> {
             text: text.to_string(),
         }
     }
+}
+
+pub(crate) fn language_name(path: &str) -> &str {
+    Language::from_path(path)
+        .map(Language::name)
+        .or_else(|| Path::new(path).extension().and_then(OsStr::to_str))
+        .unwrap_or("text")
+}
+
+pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change]) -> Vec<Snippet> {
+    let lines = Lines::new(source);
+    let parsed = Language::from_path(path)
+        .and_then(|language| language.parse(source).map(|tree| (language, tree)));
+    let mut selections = Vec::new();
+    let mut unplaced = Vec::new();
+
+    for (line, start, end) in changes
+        .iter()
+        .flat_map(|change| lines.content_ranges(*change))
+    {
+        let placed = parsed.as_ref().and_then(|(language, tree)| {
+            let covering = tree.root_node().descendant_for_byte_range(start, end)?;
+            select_for_node(*language, covering, source)
+        });
+
+        match placed {
+            Some(selection) => selections.push(selection),
+            None => unplaced.push(line),
+        }
+    }
+
+    let windows = lines.windows(unplaced, &selections);
+    selections.extend(windows);
+    merge_overlapping(selections, source)
+        .into_iter()
+        .map(|selection| lines.snippet(selection))
+        .collect()
+}
+
+fn select_for_node(language: Language, covering: Node, source: &str) -> Option<Selection> {
+    let unit = enclosing_unit(language, covering)?;
+
+    if unit.has_error() {
+        return None;
+    }
+
+    if fits(unit, source) {
+        return Some(Selection::of(unit, None));
+    }
+
+    let block = largest_fitting(covering, unit, source)?;
+    Some(Selection::of(block, Some(signature(unit, source))))
+}
+
+fn enclosing_unit(language: Language, covering: Node) -> Option<Node> {
+    let mut node = covering;
+
+    loop {
+        if language.is_unit(node) {
+            return Some(
+                node.parent()
+                    .filter(|parent| parent.kind() == "export_statement")
+                    .unwrap_or(node),
+            );
+        }
+
+        let parent = node.parent()?;
+
+        if parent.parent().is_none() {
+            return Some(node);
+        }
+
+        node = parent;
+    }
+}
+
+fn largest_fitting<'tree>(
+    covering: Node<'tree>,
+    unit: Node<'tree>,
+    source: &str,
+) -> Option<Node<'tree>> {
+    let mut best = None;
+    let mut node = covering;
+
+    while node != unit && fits(node, source) {
+        best = Some(node);
+        node = node.parent()?;
+    }
+
+    best
+}
+
+fn estimate_token_count(text: &str) -> usize {
+    text.len().div_ceil(BYTES_PER_TOKEN)
+}
+
+fn fits(node: Node, source: &str) -> bool {
+    estimate_token_count(&source[node.byte_range()]) <= BUDGET_TOKENS
+}
+
+fn signature(unit: Node, source: &str) -> String {
+    let end = function_body(unit).map_or_else(
+        || {
+            source[unit.byte_range()]
+                .find('\n')
+                .map_or(unit.end_byte(), |offset| unit.start_byte() + offset)
+        },
+        |body| body.start_byte(),
+    );
+    source[unit.start_byte()..end].trim_end().to_string()
+}
+
+fn function_body(node: Node) -> Option<Node> {
+    node.child_by_field_name("body")
+        // ast-grep-ignore: no-stringly-match -- tree-sitter names node kinds with strings, and the grammar is the parse
+        .or_else(|| match node.kind() {
+            "export_statement" => node
+                .child_by_field_name("declaration")
+                .and_then(function_body),
+            "lexical_declaration" | "variable_declaration" => {
+                declared_function(node).and_then(function_body)
+            }
+            _ => None,
+        })
+}
+
+fn declared_function(declaration: Node) -> Option<Node> {
+    let mut cursor = declaration.walk();
+    declaration
+        .named_children(&mut cursor)
+        .filter_map(|declarator| declarator.child_by_field_name("value"))
+        .find(|value| FUNCTION_VALUE_KINDS.contains(&value.kind()))
+}
+
+fn merge_overlapping(mut selections: Vec<Selection>, source: &str) -> Vec<Selection> {
+    selections.sort_by_key(|selection| (selection.start_byte, Reverse(selection.end_byte)));
+    let mut merged: Vec<Selection> = Vec::new();
+
+    for selection in selections {
+        if let Some(previous) = merged.last_mut() {
+            if selection.end_byte <= previous.end_byte {
+                continue;
+            }
+
+            if selection.start_byte < previous.end_byte
+                && selection.signature == previous.signature
+                && estimate_token_count(&source[previous.start_byte..selection.end_byte])
+                    <= BUDGET_TOKENS
+            {
+                previous.end_byte = selection.end_byte;
+                continue;
+            }
+        }
+
+        merged.push(selection);
+    }
+
+    merged
 }
 
 #[cfg(test)]
