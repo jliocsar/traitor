@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{Display, Write as _};
+use std::error::Error;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -7,16 +8,17 @@ use snafu::Snafu;
 
 use crate::check::{CheckError, Finding, Report, check};
 use crate::configured_repository::{ConfiguredRepository, OpenError};
-use crate::git::Repository;
+use crate::error_chain::error_chain;
+use crate::git::{GitError, Repository};
 use crate::judge::Judge;
 use crate::store::{JsonStore, hex_sha256};
 use crate::trait_definition::TRAITS_DIRECTORY;
 use crate::verdict::Answer;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct StopHookInput {
-    pub session_id: Option<String>,
-    pub cwd: Option<PathBuf>,
+    pub session_id: String,
+    pub cwd: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -36,9 +38,9 @@ pub struct StopHookOutput {
 }
 
 impl StopHookOutput {
-    pub fn could_not_check(error: impl Display) -> Self {
+    pub fn could_not_check(error: &dyn Error) -> Self {
         Self {
-            system_message: Some(format!("traitor couldn't check: {error}")),
+            system_message: Some(format!("traitor couldn't check: {}", error_chain(error))),
             ..Self::default()
         }
     }
@@ -59,15 +61,25 @@ pub async fn respond_to_stop<J: Judge>(
     judge: &J,
     store: &JsonStore,
 ) -> StopHookOutput {
-    let Ok(git) = Repository::discover(directory) else {
-        return StopHookOutput::default();
-    };
-    if !git.root().join(TRAITS_DIRECTORY).is_dir() {
-        return StopHookOutput::default();
+    match repository_with_traits(Repository::discover(directory)) {
+        Ok(Some(git)) => check_for_stop(git, session_id, revision, judge, store)
+            .await
+            .unwrap_or_else(|error| StopHookOutput::could_not_check(&error)),
+        Ok(None) => StopHookOutput::default(),
+        Err(error) => StopHookOutput::could_not_check(&error),
     }
-    check_for_stop(git, session_id, revision, judge, store)
-        .await
-        .unwrap_or_else(StopHookOutput::could_not_check)
+}
+
+/// The repository to check, or none when the directory isn't in a git repository with traits.
+/// Git failing to run at all is an error, not "no repository".
+fn repository_with_traits(
+    discovered: Result<Repository, GitError>,
+) -> Result<Option<Repository>, GitError> {
+    match discovered {
+        Ok(git) => Ok(git.root().join(TRAITS_DIRECTORY).is_dir().then_some(git)),
+        Err(GitError::Failed { .. }) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 async fn check_for_stop<J: Judge>(

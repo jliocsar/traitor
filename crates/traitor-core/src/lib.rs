@@ -1,4 +1,5 @@
 mod climb;
+mod error_chain;
 mod git;
 mod glob;
 
@@ -15,6 +16,7 @@ pub mod trait_definition;
 pub mod verdict;
 
 pub use climb::Snippet;
+pub use error_chain::error_chain;
 pub use git::GitError;
 pub use glob::GlobError;
 

@@ -45,6 +45,8 @@ impl Finding<'_> {
 pub struct Report<'repository> {
     pub snippet_count: usize,
     pub findings: Vec<Finding<'repository>>,
+    /// Changed paths that aren't valid UTF-8, shown as near as they can be. They weren't judged.
+    pub non_utf8_paths: Vec<String>,
 }
 
 impl Report<'_> {
@@ -90,8 +92,9 @@ pub async fn check<'repository, J: Judge>(
 ) -> Result<Report<'repository>, CheckError> {
     let git = repository.git();
     let comparison = git.resolve_comparison(revision)?;
+    let changed_files = git.changed_files(&comparison)?;
     let mut changed = Vec::new();
-    for file in git.changed_files(&comparison)? {
+    for file in changed_files.files {
         let traits = repository.traits_for(&file.path);
         if traits.is_empty() {
             continue;
@@ -128,6 +131,7 @@ pub async fn check<'repository, J: Judge>(
     Ok(Report {
         snippet_count,
         findings,
+        non_utf8_paths: changed_files.non_utf8_paths,
     })
 }
 
