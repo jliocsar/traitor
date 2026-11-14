@@ -8,6 +8,14 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/jliocsar/traitor"
 
+[workspace.dependencies]
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+snafu = "0.9.2"
+traitor-ai-typesafe = { path = "crates/traitor-ai-typesafe" }
+traitor-core = { path = "crates/traitor-core" }
+
 [profile.release]
 lto = true
 codegen-units = 1

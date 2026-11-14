@@ -69,7 +69,7 @@ fn print_report(report: &Report) {
 fn print_finding(finding: &Finding) {
     println!(
         "{}: {} at {}, p(fail) {:.2}",
-        finding.verdict.answer.label(),
+        finding.verdict.answer,
         finding.definition.label(),
         finding.location(),
         finding.verdict.probabilities.fail

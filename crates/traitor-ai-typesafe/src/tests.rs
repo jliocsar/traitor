@@ -44,3 +44,16 @@ fn reads_a_choice_answer_as_a_verdict() {
         0.89
     );
 }
+
+#[test]
+fn a_long_error_body_is_cut_on_a_character() {
+    let body = "é".repeat(ERROR_BODY_CHARS + 50);
+    let shown = shorten(&body);
+    assert_eq!(shown.chars().count(), ERROR_BODY_CHARS + 1);
+    assert!(shown.ends_with('…'));
+}
+
+#[test]
+fn a_short_error_body_is_shown_whole() {
+    assert_eq!(shorten(" model not found\n"), "model not found");
+}

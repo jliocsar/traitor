@@ -9,20 +9,23 @@ repository.workspace = true
 dirs = "7.0.0"
 futures = "0.3.34"
 globset = "0.4.21"
-serde = { version = "1.0.229", features = ["derive"] }
-semver = "1.0.28"
+serde.workspace = true
+semver.workspace = true
 serde-saphyr = "2.1.1"
-serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# preserve_order keeps a config's keys where they were when `traitor init` upgrades it
+# (init.rs's shift_insert). Cargo unifies it into every crate's serde_json, which is harmless.
+serde_json = { workspace = true, features = ["preserve_order"] }
 sha2 = "0.11.1"
-snafu = "0.9.2"
+snafu.workspace = true
 tree-sitter = "0.27.2"
 tree-sitter-javascript = "0.25.0"
 tree-sitter-md = "0.5.4"
 tree-sitter-typescript = "0.23.2"
-schemars = "1.2.3"
 
 [dev-dependencies]
 insta = "1.49.0"
+# Only the test that keeps schema/traitor.schema.json current generates the schema.
+schemars = "1.2.3"
 tempfile = "3.27.0"
 
 [lints]

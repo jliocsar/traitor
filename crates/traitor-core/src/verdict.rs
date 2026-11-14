@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -12,14 +14,15 @@ pub enum Answer {
     Unsure,
 }
 
-impl Answer {
-    pub fn label(self) -> &'static str {
-        match self {
+/// Shown as Jev names it, the same as its serde name.
+impl fmt::Display for Answer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
             Self::Pass => "pass",
             Self::Fail => "fail",
             Self::NotApplicable => "n/a",
             Self::Unsure => "unsure",
-        }
+        })
     }
 }
 
@@ -38,3 +41,6 @@ pub struct Verdict {
     pub confidence: f64,
     pub probabilities: Probabilities,
 }
+
+#[cfg(test)]
+mod tests;
