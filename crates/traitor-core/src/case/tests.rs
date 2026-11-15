@@ -14,6 +14,7 @@ const CASES: &str = ".agents/traits/railway-not-guards";
 
 fn write_case(root: &Path, folder: &str, name: &str, contents: &str) {
     let directory = root.join(CASES).join(folder);
+
     fs::create_dir_all(&directory).unwrap();
     fs::write(directory.join(name), contents).unwrap();
 }
@@ -36,6 +37,7 @@ fn run<'repository>(
 fn each_case_is_judged_against_the_verdict_its_folder_names() {
     let directory = repository_with_trait("{}");
     let root = directory.path();
+
     write_case(
         root,
         "pass",
@@ -45,6 +47,7 @@ fn each_case_is_judged_against_the_verdict_its_folder_names() {
     write_case(root, "fail", "guarded.ts", "let label = ''\n");
     write_case(root, "fail", "looks-fine.ts", "const total = sum(items)\n");
     write_case(root, "fail", ".DS_Store", "");
+
     let repository = ConfiguredRepository::open(root).unwrap();
     let cache = TempDir::new().unwrap();
     let report = run(&repository, &[], &FakeJudge::new(), &cache).unwrap();
@@ -71,7 +74,9 @@ fn each_case_is_judged_against_the_verdict_its_folder_names() {
 fn a_pass_case_also_holds_on_n_a() {
     let definition = railway_definition();
     let mut not_applicable = verdict(false);
+
     not_applicable.answer = Answer::NotApplicable;
+
     let result = |expected, verdict| CaseResult {
         definition: &definition,
         path: "case.ts".to_string(),
@@ -87,16 +92,20 @@ fn a_pass_case_also_holds_on_n_a() {
 #[test]
 fn the_judge_never_sees_the_folder_or_file_name() {
     let directory = repository_with_trait("{}");
+
     write_case(
         directory.path(),
         "fail",
         "guarded-bad.ts",
         "let label = ''\n",
     );
+
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
     let judge = FakeJudge::new();
     let cache = TempDir::new().unwrap();
+
     run(&repository, &[], &judge, &cache).unwrap();
+
     let states = judge.states.borrow();
 
     assert_eq!(states[0].path, "case.ts");

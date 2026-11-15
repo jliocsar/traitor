@@ -80,6 +80,7 @@ pub(crate) async fn judge_through_cache<'repository, T, J: Judge>(
 ) -> Result<Judgements<'repository, T>, JudgingError> {
     let (judged, cache_write_error) = {
         let requests: Vec<JudgeRequest> = items.iter().map(request).collect();
+
         judge_requests(judge, store, &requests).await?
     };
 
@@ -95,6 +96,7 @@ fn cache_key(
     state: &SnippetState,
 ) -> Result<String, JudgingError> {
     let material = serde_json::to_vec(&(model, question, state)).context(CacheKeySnafu)?;
+
     Ok(hex_sha256(&material))
 }
 
@@ -112,6 +114,7 @@ async fn judge_requests<'repository, J: Judge>(
                 .map(|definition| {
                     let key =
                         cache_key(judge.model(), &Question::about(definition), &request.state)?;
+
                     Ok(CachedQuestion {
                         definition,
                         verdict: store.read(&key),
@@ -131,6 +134,7 @@ async fn judge_requests<'repository, J: Judge>(
                 .filter(|question| question.verdict.is_none())
                 .map(|question| question.definition)
                 .collect();
+
             (!traits.is_empty()).then_some((
                 index,
                 JudgeRequest {
@@ -152,6 +156,7 @@ async fn judge_requests<'repository, J: Judge>(
                     })
                     .map(|(question, verdict)| store.write(&question.key, verdict))
                     .fold(None, |first, written| first.or(written.err()));
+
                 Ok::<_, J::Error>((index, verdicts, cache_write_error))
             })
             .buffer_unordered(CONCURRENT_REQUESTS)
@@ -164,6 +169,7 @@ async fn judge_requests<'repository, J: Judge>(
         (BTreeMap::new(), None),
         |(mut answers, first), (index, verdicts, error)| {
             answers.insert(index, verdicts);
+
             (answers, first.or(error))
         },
     );
@@ -188,6 +194,7 @@ async fn judge_requests<'repository, J: Judge>(
                         .context(MissingVerdictSnafu {
                             slug: &question.definition.slug,
                         })?;
+
                     Ok(Judged {
                         definition: question.definition,
                         verdict,
@@ -197,5 +204,6 @@ async fn judge_requests<'repository, J: Judge>(
                 .collect()
         })
         .collect::<Result<_, _>>()?;
+
     Ok((judged, cache_write_error))
 }

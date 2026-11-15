@@ -30,6 +30,7 @@ fn request(definition: &TraitDefinition) -> JudgeRequest<'_, '_> {
 #[test]
 fn the_request_body_is_one_choice_per_trait() {
     let definition = definition();
+
     insta::assert_json_snapshot!(request_body(&request(&definition)));
 }
 

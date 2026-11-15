@@ -23,6 +23,7 @@ pub(crate) fn compile_globs(path: &Path, globs: &[String]) -> Result<GlobSet, Gl
                     .build()
                     .context(GlobSnafu { path, glob })?,
             );
+
             Ok(builder)
         })?
         .build()

@@ -80,6 +80,7 @@ pub(crate) struct Repository {
 impl Repository {
     pub(crate) fn discover(directory: &Path) -> Result<Self, GitError> {
         let root = run_git(directory, &["rev-parse", "--show-toplevel"])?;
+
         Ok(Self {
             root: PathBuf::from(root.trim_end()),
         })
@@ -140,8 +141,10 @@ impl Repository {
             "--end-of-options",
             &comparison.base,
         ];
+
         arguments.extend(comparison.head.as_deref());
         arguments.push("--");
+
         let mut changed = parse_diff(&self.git(&arguments)?);
 
         if comparison.head.is_none() {
@@ -151,6 +154,7 @@ impl Repository {
         changed
             .files
             .sort_by(|left, right| left.path.cmp(&right.path));
+
         Ok(changed)
     }
 
@@ -192,6 +196,7 @@ impl Repository {
             .filter(|path| !path.is_empty())
             .map(|path| utf8_path(path.to_vec()))
             .partition(Result::is_ok);
+
         Ok(ChangedFiles {
             files: paths
                 .into_iter()
@@ -282,6 +287,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
                 }),
                 Some(Err(NonUtf8Path { shown })) => {
                     changed.non_utf8_paths.push(shown);
+
                     None
                 }
                 None => None,
@@ -299,6 +305,7 @@ fn parse_diff(diff: &str) -> ChangedFiles {
 
     changed.files.extend(current);
     changed.files.retain(|file| !file.changes.is_empty());
+
     changed
 }
 
@@ -314,6 +321,7 @@ fn new_path(header_path: &str) -> Option<Result<String, NonUtf8Path>> {
     };
 
     let path = bytes.strip_prefix(b"b/")?;
+
     Some(utf8_path(path.to_vec()))
 }
 
@@ -338,6 +346,7 @@ fn unquote(quoted: &str) -> Option<Vec<u8>> {
             high @ b'0'..=b'3' => {
                 let middle = escaped.next().filter(|byte| is_octal_digit(*byte))?;
                 let low = escaped.next().filter(|byte| is_octal_digit(*byte))?;
+
                 (high - b'0') * 64 + (middle - b'0') * 8 + (low - b'0')
             }
             other => other,

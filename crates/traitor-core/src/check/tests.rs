@@ -19,8 +19,10 @@ const MODULE: &str = "export function guarded(name: string): string {\n  let lab
 
 fn repository(config: &str) -> TempDir {
     let directory = repository_with_trait(config);
+
     fs::create_dir_all(directory.path().join("src")).unwrap();
     fs::write(directory.path().join("src/module.ts"), MODULE).unwrap();
+
     directory
 }
 
@@ -63,7 +65,9 @@ fn a_second_run_reads_every_verdict_from_the_cache() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
+
     block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+
     let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
 
     assert_eq!(judge.calls.get(), 2);
@@ -127,6 +131,7 @@ fn an_exempt_path_is_never_asked_about() {
 #[test]
 fn a_repo_without_a_config_cannot_be_opened() {
     let directory = repository("{}");
+
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
 
     assert_matches!(
@@ -176,6 +181,7 @@ fn verdicts_that_came_back_are_kept_when_another_request_fails() {
     );
 
     let judge = FakeJudge::new();
+
     block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
 
     assert_eq!(judge.calls.get(), 1);
@@ -184,11 +190,13 @@ fn verdicts_that_came_back_are_kept_when_another_request_fails() {
 #[test]
 fn a_new_binary_file_is_never_asked_about() {
     let directory = repository("{}");
+
     fs::write(
         directory.path().join("src/blob.ts"),
         b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR",
     )
     .unwrap();
+
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
@@ -210,6 +218,7 @@ fn a_new_binary_file_is_never_asked_about() {
 #[test]
 fn a_range_reads_files_from_its_last_commit() {
     let directory = repository("{}");
+
     git(directory.path(), &["add", "-A"]);
     git(directory.path(), &["commit", "-q", "-m", "module"]);
     fs::write(
@@ -217,6 +226,7 @@ fn a_range_reads_files_from_its_last_commit() {
         "export const changed = 1\n",
     )
     .unwrap();
+
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
@@ -242,7 +252,9 @@ fn a_cache_that_cant_be_written_is_reported_without_changing_the_verdicts() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let not_a_directory = cache.path().join("file");
+
     fs::write(&not_a_directory, "").unwrap();
+
     let report = block_on(check(
         &repository,
         None,

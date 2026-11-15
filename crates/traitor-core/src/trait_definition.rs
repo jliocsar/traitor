@@ -70,7 +70,9 @@ impl TraitDefinition {
         let frontmatter: Frontmatter =
             serde_saphyr::from_str(frontmatter).context(InvalidFrontmatterSnafu { path })?;
         let expect = body.trim();
+
         ensure!(!expect.is_empty(), MissingExpectSnafu { path });
+
         Ok(Self {
             slug: slug.to_string(),
             title: frontmatter.title,
@@ -114,6 +116,7 @@ pub(crate) fn load_trait_definitions(
             let slug = folder.file_name().to_string_lossy().into_owned();
             let path = folder.path().join(TRAIT_FILE);
             let contents = fs::read_to_string(&path).context(ReadTraitSnafu { path: &path })?;
+
             TraitDefinition::parse(&slug, &path, &contents)
         })
         .collect()
@@ -121,8 +124,10 @@ pub(crate) fn load_trait_definitions(
 
 pub(crate) fn visible_entries(directory: &Path) -> io::Result<Vec<DirEntry>> {
     let mut entries: Vec<DirEntry> = fs::read_dir(directory)?.collect::<io::Result<_>>()?;
+
     entries.retain(|entry| !entry.file_name().to_string_lossy().starts_with('.'));
     entries.sort_by_key(DirEntry::file_name);
+
     Ok(entries)
 }
 

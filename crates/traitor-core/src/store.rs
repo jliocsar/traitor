@@ -51,6 +51,7 @@ impl JsonStore {
 
     pub(crate) fn read<T: DeserializeOwned>(&self, name: &str) -> Option<T> {
         let contents = fs::read(self.directory.as_ref()?.join(format!("{name}.json"))).ok()?;
+
         serde_json::from_slice(&contents).ok()
     }
 
@@ -68,8 +69,11 @@ impl JsonStore {
 
 fn write_atomically<T: Serialize>(directory: &Path, name: &str, value: &T) -> io::Result<()> {
     fs::create_dir_all(directory)?;
+
     let temporary = directory.join(format!("{name}.json.{}.tmp", process::id()));
+
     fs::write(&temporary, serde_json::to_vec(value)?)?;
+
     fs::rename(&temporary, directory.join(format!("{name}.json")))
 }
 

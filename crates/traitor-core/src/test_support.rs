@@ -69,6 +69,7 @@ impl Judge for FakeJudge {
             path: request.state.path.to_string(),
             language: request.state.language.to_string(),
         });
+
         let fails = request.state.snippet.contains("let ");
 
         let answer = if self.calls.get() > self.answers_before_offline {
@@ -87,6 +88,7 @@ impl Judge for FakeJudge {
 
 pub(crate) fn verdict(fails: bool) -> Verdict {
     let fail = if fails { 0.97 } else { 0.01 };
+
     Verdict {
         answer: if fails { Answer::Fail } else { Answer::Pass },
         confidence: 0.9,
@@ -125,6 +127,7 @@ pub(crate) fn git(directory: &Path, arguments: &[&str]) {
 pub(crate) fn repository_with_trait(config: &str) -> TempDir {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
+
     git(root, &["init", "-q", "-b", "main"]);
     fs::create_dir_all(root.join(".agents/traits/railway-not-guards")).unwrap();
     fs::write(
@@ -135,5 +138,6 @@ pub(crate) fn repository_with_trait(config: &str) -> TempDir {
     fs::write(root.join(".agents/traitor.json"), config).unwrap();
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "traits"]);
+
     directory
 }

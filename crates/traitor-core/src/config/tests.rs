@@ -15,7 +15,9 @@ fn config_json_schema() -> String {
         .into_generator()
         .into_root_schema_for::<ConfigFile>();
     let mut text = serde_json::to_string_pretty(&schema).unwrap();
+
     text.push('\n');
+
     text
 }
 

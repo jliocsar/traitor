@@ -69,6 +69,7 @@ impl Report<'_> {
             .iter()
             .filter(|finding| finding.verdict.answer == Answer::Fail)
             .peekable();
+
         fails.peek().is_some() && fails.all(|finding| finding.threshold.is_none())
     }
 }
@@ -146,6 +147,7 @@ pub async fn check<'repository, J: Judge>(
             })
         })
         .collect();
+
     Ok(Report {
         snippet_count,
         findings,

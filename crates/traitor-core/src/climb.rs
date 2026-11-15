@@ -78,7 +78,9 @@ impl Language {
 
     fn parse(self, source: &str) -> Option<Tree> {
         let mut parser = Parser::new();
+
         parser.set_language(&self.grammar()).ok()?;
+
         parser.parse(source, None)
     }
 
@@ -122,6 +124,7 @@ impl<'source> Lines<'source> {
 
     fn clamp(&self, change: LineRange) -> Option<(usize, usize)> {
         let last = change.last.min(self.starts.len());
+
         (change.first >= 1 && change.first <= last).then_some((change.first, last))
     }
 
@@ -131,6 +134,7 @@ impl<'source> Lines<'source> {
             .starts
             .get(line)
             .map_or(self.source.len(), |next| next - 1);
+
         (start, end)
     }
 
@@ -148,6 +152,7 @@ impl<'source> Lines<'source> {
                     .rev()
                     .find_map(|line| self.content_range(line));
                 let following = (after + 1..=line_count).find_map(|line| self.content_range(line));
+
                 before.into_iter().chain(following).collect()
             }
         }
@@ -158,12 +163,14 @@ impl<'source> Lines<'source> {
         let text = &self.source[start..end];
         let leading = text.len() - text.trim_start().len();
         let trailing = text.len() - text.trim_end().len();
+
         (leading < text.len()).then_some((line, start + leading, end - trailing))
     }
 
     fn windows(&self, mut changed: Vec<usize>, placed: &[Selection]) -> Vec<Selection> {
         changed.sort_unstable();
         changed.dedup();
+
         let taken: Vec<(usize, usize)> = placed
             .iter()
             .map(|selection| {
@@ -228,6 +235,7 @@ impl<'source> Lines<'source> {
 
     fn lines_fit(&self, first: usize, last: usize) -> bool {
         let text = &self.source[self.byte_range(first).0..self.byte_range(last).1];
+
         estimate_token_count(text) <= BUDGET_TOKENS
     }
 
@@ -247,6 +255,7 @@ impl<'source> Lines<'source> {
 
         let text = &self.source[start_byte..selection.end_byte];
         let text = text.trim_end_matches(['\n', '\r']);
+
         Snippet {
             first_line: self.line_of(selection.start_byte),
             last_line: self.line_of(start_byte + text.len().saturating_sub(1)),
@@ -276,6 +285,7 @@ pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change])
     {
         let placed = parsed.as_ref().and_then(|(language, tree)| {
             let covering = tree.root_node().descendant_for_byte_range(start, end)?;
+
             select_for_node(*language, covering, source)
         });
 
@@ -286,7 +296,9 @@ pub(crate) fn snippets_for_changes(path: &str, source: &str, changes: &[Change])
     }
 
     let windows = lines.windows(unplaced, &selections);
+
     selections.extend(windows);
+
     merge_overlapping(selections, source)
         .into_iter()
         .map(|selection| lines.snippet(selection))
@@ -305,6 +317,7 @@ fn select_for_node(language: Language, covering: Node, source: &str) -> Option<S
     }
 
     let block = largest_fitting(covering, unit, source)?;
+
     Some(Selection::of(block, Some(signature(unit, source))))
 }
 
@@ -363,6 +376,7 @@ fn signature(unit: Node, source: &str) -> String {
         },
         |body| body.start_byte(),
     );
+
     source[unit.start_byte()..end].trim_end().to_string()
 }
 
@@ -382,6 +396,7 @@ fn function_body(node: Node) -> Option<Node> {
 
 fn declared_function(declaration: Node) -> Option<Node> {
     let mut cursor = declaration.walk();
+
     declaration
         .named_children(&mut cursor)
         .filter_map(|declarator| declarator.child_by_field_name("value"))
@@ -390,6 +405,7 @@ fn declared_function(declaration: Node) -> Option<Node> {
 
 fn merge_overlapping(mut selections: Vec<Selection>, source: &str) -> Vec<Selection> {
     selections.sort_by_key(|selection| (selection.start_byte, Reverse(selection.end_byte)));
+
     let mut merged: Vec<Selection> = Vec::new();
 
     for selection in selections {
