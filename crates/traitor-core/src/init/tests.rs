@@ -7,7 +7,9 @@ use crate::test_support::git;
 
 fn repository() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
+
     git(directory.path(), &["init", "-q"]);
+
     directory
 }
 
@@ -17,6 +19,7 @@ fn version(text: &str) -> Version {
 
 fn write(directory: &Path, contents: &str) {
     let path = directory.join(CONFIG_PATH);
+
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, contents).unwrap();
 }
@@ -42,6 +45,7 @@ fn creates_a_config_pinned_to_the_binary() {
 #[test]
 fn writes_at_the_repository_root_from_a_subdirectory() {
     let directory = repository();
+
     fs::create_dir_all(directory.path().join("src/deep")).unwrap();
     init(&directory.path().join("src/deep"), &version("0.3.0")).unwrap();
 
@@ -51,6 +55,7 @@ fn writes_at_the_repository_root_from_a_subdirectory() {
 #[test]
 fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
     let directory = repository();
+
     write(
         directory.path(),
         &format!(
@@ -58,6 +63,7 @@ fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
             schema_url(&version("0.2.1"))
         ),
     );
+
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
 
     assert_eq!(
@@ -76,7 +82,9 @@ fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
 #[test]
 fn adds_a_missing_schema_first() {
     let directory = repository();
+
     write(directory.path(), "{\"traits\":{}}");
+
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
 
     assert_eq!(outcome, InitOutcome::AddedSchema);
@@ -90,7 +98,9 @@ fn leaves_a_current_config_untouched() {
         "{{ \"$schema\": \"{}\", \"traits\": {{}} }}",
         schema_url(&version("0.3.0"))
     );
+
     write(directory.path(), &contents);
+
     let outcome = init(directory.path(), &version("0.3.0")).unwrap();
 
     assert_eq!(outcome, InitOutcome::AlreadyCurrent);
@@ -100,6 +110,7 @@ fn leaves_a_current_config_untouched() {
 #[test]
 fn refuses_a_config_newer_than_the_binary() {
     let directory = repository();
+
     write(
         directory.path(),
         &format!("{{\"$schema\":\"{}\"}}", schema_url(&version("0.4.0"))),
@@ -114,6 +125,7 @@ fn refuses_a_config_newer_than_the_binary() {
 #[test]
 fn refuses_a_schema_that_isnt_traitors() {
     let directory = repository();
+
     write(directory.path(), "{\"$schema\":\"./schema.json\"}");
 
     assert_matches!(
@@ -129,6 +141,7 @@ fn refuses_to_write_an_upgrade_that_wouldnt_load() {
         "{{\"$schema\":\"{}\",\"traits\":{{\"x\":{{\"threshold\":2}}}}}}",
         schema_url(&version("0.2.0"))
     );
+
     write(directory.path(), &contents);
 
     assert_matches!(

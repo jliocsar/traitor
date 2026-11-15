@@ -69,6 +69,7 @@ impl fmt::Display for BlockReason<'_> {
         formatter.write_str(
             "traitor found changed code that breaks this repo's traits. Fix each one. If you think a verdict is wrong, tell the user why instead of working around it.\n",
         )?;
+
         let mut by_trait: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
 
         for finding in self.failing {
@@ -80,6 +81,7 @@ impl fmt::Display for BlockReason<'_> {
 
         for findings in by_trait.into_values() {
             let definition = findings[0].definition;
+
             write!(
                 formatter,
                 "\n{}\nwhy: {}\nexpect: {}\n",
@@ -157,12 +159,15 @@ pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
         "{}",
         serde_json::to_string(&output).context(HookOutputSnafu)?
     );
+
     Ok(Outcome::Success)
 }
 
 fn read_input(mut reader: impl Read) -> Result<StopHookInput, InputError> {
     let mut text = String::new();
+
     reader.read_to_string(&mut text).context(ReadSnafu)?;
+
     serde_json::from_str(&text).context(ParseSnafu)
 }
 
@@ -184,6 +189,7 @@ async fn respond(
     let blocked_fails = BlockedFails::new(&session.store);
     let fails = session_fails(&report, &blocked_fails.read(&input.session_id))
         .context(FailIdentitySnafu)?;
+
     warn_if_not_cached(report.cache_write_error.as_ref());
 
     if let Err(error) = blocked_fails.write(&input.session_id, &fails.identities) {

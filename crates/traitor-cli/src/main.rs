@@ -77,6 +77,7 @@ async fn main() -> ExitCode {
         Ok(Outcome::TraitBroken) => ExitCode::from(EXIT_TRAIT_BROKEN),
         Err(error) => {
             eprintln!("traitor couldn't {activity}: {}", error_chain(&error));
+
             ExitCode::from(EXIT_COULD_NOT_RUN)
         }
     }

@@ -35,6 +35,7 @@ fn a_directory_outside_any_repository_has_no_repository() {
 #[test]
 fn a_repo_without_traits_opens_as_none() {
     let directory = TempDir::new().unwrap();
+
     git(directory.path(), &["init", "-q"]);
 
     assert!(matches!(
@@ -46,6 +47,7 @@ fn a_repo_without_traits_opens_as_none() {
 #[test]
 fn a_repo_with_traits_but_no_config_is_an_error() {
     let directory = repository_with_trait("{}");
+
     fs::remove_file(directory.path().join(".agents/traitor.json")).unwrap();
 
     assert!(matches!(

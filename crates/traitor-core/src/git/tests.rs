@@ -119,12 +119,14 @@ fn changed_and_untracked_paths_that_arent_utf8_are_listed_apart() {
     let directory = crate::test_support::repository_with_trait("{}");
     let root = directory.path();
     let tracked = root.join(OsStr::from_bytes(b"tracked-\xff.ts"));
+
     std::fs::write(&tracked, "let a = 1\n").unwrap();
     crate::test_support::git(root, &["add", "-A"]);
     crate::test_support::git(root, &["commit", "-q", "-m", "tracked"]);
     std::fs::write(&tracked, "let a = 2\n").unwrap();
     std::fs::write(root.join(OsStr::from_bytes(b"untracked-\xfe.ts")), "x\n").unwrap();
     std::fs::write(root.join("plain.ts"), "x\n").unwrap();
+
     let repository = Repository::discover(root).unwrap();
     let changed = repository
         .changed_files(&repository.resolve_comparison(None).unwrap())

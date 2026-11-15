@@ -16,7 +16,9 @@ fn a_name_is_the_lowercase_hex_of_its_sha256() {
 fn a_write_that_fails_says_where() {
     let directory = tempfile::TempDir::new().unwrap();
     let file = directory.path().join("not-a-directory");
+
     std::fs::write(&file, "").unwrap();
+
     let error = JsonStore::at(file.clone()).write("name", &1).unwrap_err();
 
     assert!(

@@ -50,6 +50,7 @@ fn render(snippets: &[Snippet]) -> String {
                 .as_ref()
                 .map(|signature| format!(" inside `{signature}`"))
                 .unwrap_or_default();
+
             format!(
                 "lines {}-{}{signature}\n{}",
                 snippet.first_line, snippet.last_line, snippet.text
@@ -62,12 +63,14 @@ fn render(snippets: &[Snippet]) -> String {
 fn numbered_lines(numbers: RangeInclusive<usize>, line: impl Fn(usize) -> String) -> String {
     numbers.fold(String::new(), |mut text, number| {
         writeln!(text, "{}", line(number)).unwrap();
+
         text
     })
 }
 
 fn long_function() -> String {
     let filler = numbered_lines(0..=399, |index| format!("  const value{index} = {index}"));
+
     format!(
         "function long(input: number): number {{\n{filler}  if (input > 0) {{\n    let total = input\n    total += 1\n  }}\n{filler}  return input\n}}\n"
     )
@@ -153,6 +156,7 @@ fn a_whole_new_file_is_every_top_level_unit() {
 #[test]
 fn a_function_over_the_budget_is_cut_to_the_block_around_the_change() {
     let source = long_function();
+
     insta::assert_snapshot!(render(&snippets_for_changes(
         "src/long.ts",
         &source,
@@ -172,6 +176,7 @@ fn markdown_climbs_to_the_heading_section() {
 #[test]
 fn a_unit_that_does_not_parse_falls_back_to_a_line_window() {
     let source = "function broken( {\n  return 1\n}\n";
+
     insta::assert_snapshot!(render(&snippets_for_changes(
         "src/broken.ts",
         source,

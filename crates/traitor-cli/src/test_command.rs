@@ -15,8 +15,10 @@ use crate::{CommandResult, Outcome};
 pub(crate) async fn run(traits: &[String]) -> CommandResult {
     let session = Session::in_current_directory()?;
     let report = test_cases(&session.repository, traits, &session.judge, &session.store).await?;
+
     print_case_report(&report);
     warn_if_not_cached(report.cache_write_error.as_ref());
+
     Ok(if report.all_hold() {
         Outcome::Success
     } else {
@@ -27,6 +29,7 @@ pub(crate) async fn run(traits: &[String]) -> CommandResult {
 fn print_case_report(report: &CaseReport) {
     for result in &report.results {
         let mark = if result.holds() { "ok" } else { "MISS" };
+
         println!(
             "{mark}: {} expects {}, got {}, p(fail) {:.2}",
             result.path, result.expected, result.verdict.answer, result.verdict.probabilities.fail
@@ -64,6 +67,7 @@ fn print_case_report(report: &CaseReport) {
         .iter()
         .filter(|result| result.from_cache)
         .count();
+
     println!();
     println!(
         "{held} of {} cases got the verdict their folder names, {cached} from the cache.",

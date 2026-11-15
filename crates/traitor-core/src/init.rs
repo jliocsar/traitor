@@ -82,6 +82,7 @@ pub fn init(directory: &Path, binary_version: &Version) -> Result<InitOutcome, I
     }
 
     write_config(&path, &new_config_file(binary_version))?;
+
     Ok(InitOutcome::Created)
 }
 
@@ -131,12 +132,14 @@ fn upgrade(
 
     config.shift_insert(0, SCHEMA_KEY.to_string(), Value::String(current_url));
     write_config(path, &config)?;
+
     Ok(outcome)
 }
 
 fn write_config(path: &Path, config: &Map<String, Value>) -> Result<(), InitError> {
     let mut contents =
         serde_json::to_string_pretty(config).context(SerializeConfigSnafu { path })?;
+
     contents.push('\n');
     Config::parse(path, contents.as_bytes())?;
 

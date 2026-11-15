@@ -19,8 +19,10 @@ pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
         &session.store,
     )
     .await?;
+
     print_report(&report);
     warn_if_not_cached(report.cache_write_error.as_ref());
+
     Ok(if report.fails_check() {
         Outcome::TraitBroken
     } else {
@@ -55,6 +57,7 @@ fn print_report(report: &Report) {
         .iter()
         .filter(|finding| finding.from_cache)
         .count();
+
     println!(
         "traitor judged {} snippets: {} fail, {} unsure, {cached} verdicts from the cache.",
         report.snippet_count,

@@ -18,6 +18,7 @@ static RAILWAY: LazyLock<TraitDefinition> = LazyLock::new(|| {
 
 fn verdict(answer: Answer) -> Verdict {
     let fail = if answer == Answer::Fail { 0.97 } else { 0.01 };
+
     Verdict {
         answer,
         confidence: 0.9,
@@ -60,6 +61,7 @@ fn respond(
     already_blocked: &BTreeSet<String>,
 ) -> (StopHookOutput, BTreeSet<String>) {
     let fails = session_fails(report, already_blocked).unwrap();
+
     (output(report, &fails), fails.identities)
 }
 

@@ -142,6 +142,7 @@ impl Config {
     pub(crate) fn load(repository_root: &Path) -> Result<Self, ConfigError> {
         let path = repository_root.join(CONFIG_PATH);
         let contents = read_if_present(&path)?.context(MissingConfigSnafu { path: &path })?;
+
         Self::parse(&path, &contents)
     }
 
@@ -153,9 +154,11 @@ impl Config {
             .into_iter()
             .map(|(slug, settings)| {
                 let policy = TraitPolicy::from_settings(path, &slug, settings)?;
+
                 Ok((slug, policy))
             })
             .collect::<Result<_, ConfigError>>()?;
+
         Ok(Self { traits })
     }
 
@@ -198,11 +201,13 @@ impl TraitPolicy {
                 .all(|exemption| !exemption.reason.trim().is_empty()),
             MissingReasonSnafu { path, slug }
         );
+
         let globs: Vec<String> = settings
             .exempt
             .into_iter()
             .flat_map(|exemption| exemption.paths)
             .collect();
+
         Ok(Self {
             threshold: settings.threshold,
             exempt: compile_globs(path, &globs)?,
@@ -229,6 +234,7 @@ pub(crate) fn version_in_schema_url(url: &str) -> Option<Version> {
     let version = url
         .strip_prefix(SCHEMA_URL_PREFIX)?
         .strip_suffix(SCHEMA_URL_SUFFIX)?;
+
     Version::parse(version).ok()
 }
 

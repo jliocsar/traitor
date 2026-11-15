@@ -81,6 +81,7 @@ pub fn session_fails<'report, 'repository>(
         .iter()
         .map(|finding| identity(finding))
         .collect::<Result<_, _>>()?;
+
     Ok(SessionFails {
         any_new: !identities.is_subset(already_blocked),
         failing,
@@ -95,6 +96,7 @@ fn identity(finding: &Finding) -> Result<String, serde_json::Error> {
         &finding.path,
         &finding.snippet.text,
     ))?;
+
     Ok(hex_sha256(&material))
 }
 

@@ -136,6 +136,7 @@ pub async fn test_cases<'repository, J: Judge>(
             })
         })
         .collect();
+
     Ok(CaseReport {
         results,
         traits_without_cases,
@@ -162,6 +163,7 @@ fn cases_of(definition: &TraitDefinition) -> Result<Vec<Case<'_>>, CaseError> {
             let name = file.file_name().to_string_lossy().into_owned();
             let path = file.path();
             let contents = fs::read_to_string(&path).context(ReadCaseSnafu { path: &path })?;
+
             cases.push(Case {
                 definition,
                 path: format!("{TRAITS_DIRECTORY}/{}/{folder}/{name}", definition.slug),

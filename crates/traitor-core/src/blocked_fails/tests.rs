@@ -122,6 +122,7 @@ fn each_session_keeps_its_own_blocked_fails() {
     let cache = TempDir::new().unwrap();
     let blocked_fails = BlockedFails::new(&JsonStore::at(cache.path().to_path_buf()));
     let fails = BTreeSet::from(["a".to_string()]);
+
     blocked_fails
         .write(&session("session/../odd"), &fails)
         .unwrap();
@@ -134,8 +135,10 @@ fn each_session_keeps_its_own_blocked_fails() {
 fn a_checked_session_has_new_fails_once() {
     let directory =
         repository_with_trait(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+
     fs::create_dir_all(directory.path().join("src")).unwrap();
     fs::write(directory.path().join("src/module.ts"), "let label = ''\n").unwrap();
+
     let repository = ConfiguredRepository::open(directory.path()).unwrap();
     let cache = TempDir::new().unwrap();
     let store = JsonStore::at(cache.path().to_path_buf());
@@ -144,9 +147,11 @@ fn a_checked_session_has_new_fails_once() {
     let stop = || {
         let report = block_on(check(&repository, None, &FakeJudge::new(), &store)).unwrap();
         let fails = fails_of(&report, &blocked_fails.read(&session("session")));
+
         blocked_fails
             .write(&session("session"), &fails.identities)
             .unwrap();
+
         fails.any_new
     };
 

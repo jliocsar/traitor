@@ -124,6 +124,7 @@ impl Judge for TypeSafeJudge {
         }
 
         let decoded: SystemOneResponse = response.json().await.context(DecodeSnafu)?;
+
         Ok(verdicts(decoded))
     }
 }
