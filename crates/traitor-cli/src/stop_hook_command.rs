@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use traitor_core::blocked_fails::{BlockedFails, SessionFails, SessionId, session_fails};
 use traitor_core::check::{Finding, Report, check};
+use traitor_core::store::CacheWriteError;
 use traitor_core::verdict::Answer;
 
 use crate::error::{CliError, FailIdentitySnafu, HookOutputSnafu, error_chain, warn_if_not_cached};
@@ -23,28 +24,31 @@ struct StopHookInput {
     cwd: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum Decision {
-    Block,
+/// What a Stop hook answers Claude Code with.
+#[derive(Debug, PartialEq, Eq)]
+enum StopHookAnswer {
+    /// Exit 0 with this JSON on stdout: Claude may stop, and the user may get a note.
+    Allow(StopHookOutput),
+    /// Exit 2 with this reason on stderr, the one channel that reaches Claude from a Stop hook:
+    /// Claude reads it and keeps working.
+    Block(String),
 }
 
-/// What a Stop hook prints for Claude Code: a block with its reason, a note for the user, or nothing.
+/// The JSON a Stop hook prints when it lets Claude stop: a note for the user, or nothing.
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 struct StopHookOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    decision: Option<Decision>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
     #[serde(rename = "systemMessage", skip_serializing_if = "Option::is_none")]
     system_message: Option<String>,
 }
 
 impl StopHookOutput {
     fn could_not_check(error: &dyn Error) -> Self {
+        Self::note(format!("traitor couldn't check: {}", error_chain(error)))
+    }
+
+    fn note(message: String) -> Self {
         Self {
-            system_message: Some(format!("traitor couldn't check: {}", error_chain(error))),
-            ..Self::default()
+            system_message: Some(message),
         }
     }
 }
@@ -147,20 +151,57 @@ impl fmt::Display for StillFailing<'_> {
     }
 }
 
+/// What the user sees when there are new fails, but the session couldn't be told about them
+/// without blocking every later stop on the same fails.
+struct UnrememberedFails<'a> {
+    failing: &'a [&'a Finding<'a>],
+    error: &'a CacheWriteError,
+}
+
+impl fmt::Display for UnrememberedFails<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "traitor didn't block the agent: it couldn't save which fails it told this session about ({}), so it would block every stop on the same fails. These fail:",
+            error_chain(self.error)
+        )?;
+
+        for finding in self.failing {
+            write!(
+                formatter,
+                "\n- {} at {}",
+                finding.definition.label(),
+                finding.location()
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
 pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
-    let output = match read_input(io::stdin()) {
+    let answer = match read_input(io::stdin()) {
         Ok(input) => respond(&input, revision)
             .await
-            .unwrap_or_else(|error| StopHookOutput::could_not_check(&error)),
-        Err(error) => StopHookOutput::could_not_check(&error),
+            .unwrap_or_else(|error| StopHookAnswer::Allow(StopHookOutput::could_not_check(&error))),
+        Err(error) => StopHookAnswer::Allow(StopHookOutput::could_not_check(&error)),
     };
 
-    println!(
-        "{}",
-        serde_json::to_string(&output).context(HookOutputSnafu)?
-    );
+    match answer {
+        StopHookAnswer::Allow(output) => {
+            println!(
+                "{}",
+                serde_json::to_string(&output).context(HookOutputSnafu)?
+            );
 
-    Ok(Outcome::Success)
+            Ok(Outcome::Success)
+        }
+        StopHookAnswer::Block(reason) => {
+            eprintln!("{reason}");
+
+            Ok(Outcome::BlockStop)
+        }
+    }
 }
 
 fn read_input(mut reader: impl Read) -> Result<StopHookInput, InputError> {
@@ -174,9 +215,9 @@ fn read_input(mut reader: impl Read) -> Result<StopHookInput, InputError> {
 async fn respond(
     input: &StopHookInput,
     revision: Option<&str>,
-) -> Result<StopHookOutput, CliError> {
+) -> Result<StopHookAnswer, CliError> {
     let Some(session) = Session::if_it_has_traits(&input.cwd)? else {
-        return Ok(StopHookOutput::default());
+        return Ok(StopHookAnswer::Allow(StopHookOutput::default()));
     };
 
     let report = check(
@@ -192,41 +233,43 @@ async fn respond(
 
     warn_if_not_cached(report.cache_write_error.as_ref());
 
-    if let Err(error) = blocked_fails.write(&input.session_id, &fails.identities) {
-        eprintln!(
-            "traitor couldn't remember which fails this session was told about: {}",
-            error_chain(&error)
-        );
-    }
+    let remembered = blocked_fails.write(&input.session_id, &fails.identities);
 
-    Ok(output(&report, &fails))
+    Ok(answer(&report, &fails, remembered.err().as_ref()))
 }
 
-fn output(report: &Report, fails: &SessionFails) -> StopHookOutput {
+/// Blocks on fails new to the session, unless it couldn't remember them: then every later stop
+/// would see the same fails as new and block again, forever.
+fn answer(
+    report: &Report,
+    fails: &SessionFails,
+    unremembered: Option<&CacheWriteError>,
+) -> StopHookAnswer {
     if fails.failing.is_empty() {
-        StopHookOutput::default()
-    } else if fails.any_new {
-        StopHookOutput {
-            decision: Some(Decision::Block),
-            reason: Some(
-                BlockReason {
-                    failing: &fails.failing,
-                    report,
-                }
-                .to_string(),
-            ),
-            system_message: None,
-        }
-    } else {
-        StopHookOutput {
-            system_message: Some(
-                StillFailing {
-                    failing: &fails.failing,
-                }
-                .to_string(),
-            ),
-            ..StopHookOutput::default()
-        }
+        return StopHookAnswer::Allow(StopHookOutput::default());
+    }
+
+    match (fails.any_new, unremembered) {
+        (true, None) => StopHookAnswer::Block(
+            BlockReason {
+                failing: &fails.failing,
+                report,
+            }
+            .to_string(),
+        ),
+        (true, Some(error)) => StopHookAnswer::Allow(StopHookOutput::note(
+            UnrememberedFails {
+                failing: &fails.failing,
+                error,
+            }
+            .to_string(),
+        )),
+        (false, _) => StopHookAnswer::Allow(StopHookOutput::note(
+            StillFailing {
+                failing: &fails.failing,
+            }
+            .to_string(),
+        )),
     }
 }
 

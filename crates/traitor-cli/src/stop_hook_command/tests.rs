@@ -59,10 +59,29 @@ fn report(findings: Vec<Finding<'static>>) -> Report<'static> {
 fn respond(
     report: &Report,
     already_blocked: &BTreeSet<String>,
-) -> (StopHookOutput, BTreeSet<String>) {
+) -> (StopHookAnswer, BTreeSet<String>) {
     let fails = session_fails(report, already_blocked).unwrap();
 
-    (output(report, &fails), fails.identities)
+    (answer(report, &fails, None), fails.identities)
+}
+
+fn block_reason(answer: StopHookAnswer) -> String {
+    let StopHookAnswer::Block(reason) = answer else {
+        panic!("expected a block, got {answer:?}");
+    };
+
+    reason
+}
+
+fn note(answer: StopHookAnswer) -> String {
+    let StopHookAnswer::Allow(StopHookOutput {
+        system_message: Some(message),
+    }) = answer
+    else {
+        panic!("expected a note for the user, got {answer:?}");
+    };
+
+    message
 }
 
 #[test]
@@ -98,7 +117,7 @@ fn input_that_isnt_json_says_why_it_couldnt_check() {
 
 #[test]
 fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
-    let (output, blocked) = respond(
+    let (answer, blocked) = respond(
         &report(vec![finding(
             "src/a.ts",
             "let a = 1",
@@ -107,10 +126,7 @@ fn a_fail_over_its_threshold_blocks_with_the_trait_and_where() {
         )]),
         &BTreeSet::new(),
     );
-
-    assert_eq!(output.decision, Some(Decision::Block));
-
-    let reason = output.reason.unwrap();
+    let reason = block_reason(answer);
 
     assert!(reason.contains("Railway, not guards (railway-not-guards)\n"));
     assert!(
@@ -131,26 +147,47 @@ fn the_same_fails_block_only_once() {
         Some(0.5),
     )]);
     let (_, blocked) = respond(&failing, &BTreeSet::new());
-    let (output, _) = respond(&failing, &blocked);
+    let (answer, _) = respond(&failing, &blocked);
 
-    assert_eq!(output.decision, None);
-    assert!(output.system_message.unwrap().contains("src/a.ts:1-3"));
+    assert!(note(answer).contains("src/a.ts:1-3"));
+}
+
+#[test]
+fn new_fails_that_cant_be_remembered_dont_block_every_stop() {
+    let failing = report(vec![finding(
+        "src/a.ts",
+        "let a = 1",
+        Answer::Fail,
+        Some(0.5),
+    )]);
+    let fails = session_fails(&failing, &BTreeSet::new()).unwrap();
+    let message = note(answer(
+        &failing,
+        &fails,
+        Some(&CacheWriteError::NoDirectory),
+    ));
+
+    assert!(
+        message.starts_with("traitor didn't block the agent: "),
+        "{message}"
+    );
+    assert!(message.contains("src/a.ts:1-3"));
 }
 
 #[test]
 fn a_fail_without_a_threshold_lets_the_agent_stop() {
-    let (output, blocked) = respond(
+    let (answer, blocked) = respond(
         &report(vec![finding("src/a.ts", "let a = 1", Answer::Fail, None)]),
         &BTreeSet::new(),
     );
 
-    assert_eq!(output, StopHookOutput::default());
+    assert_eq!(answer, StopHookAnswer::Allow(StopHookOutput::default()));
     assert!(blocked.is_empty());
 }
 
 #[test]
 fn unsure_snippets_ride_along_with_a_block() {
-    let (output, _) = respond(
+    let (answer, _) = respond(
         &report(vec![
             finding("src/a.ts", "let a = 1", Answer::Fail, Some(0.5)),
             finding("src/c.ts", "maybe", Answer::Unsure, None),
@@ -158,20 +195,14 @@ fn unsure_snippets_ride_along_with_a_block() {
         &BTreeSet::new(),
     );
 
-    assert!(output.reason.unwrap().contains("src/c.ts:1-3"));
+    assert!(block_reason(answer).contains("src/c.ts:1-3"));
 }
 
 #[test]
 fn the_output_is_what_a_stop_hook_reads() {
-    let output = StopHookOutput {
-        decision: Some(Decision::Block),
-        reason: Some("fix it".to_string()),
-        system_message: None,
-    };
-
     assert_eq!(
-        serde_json::to_string(&output).unwrap(),
-        r#"{"decision":"block","reason":"fix it"}"#
+        serde_json::to_string(&StopHookOutput::note("fixed".to_string())).unwrap(),
+        r#"{"systemMessage":"fixed"}"#
     );
     assert_eq!(
         serde_json::to_string(&StopHookOutput::default()).unwrap(),

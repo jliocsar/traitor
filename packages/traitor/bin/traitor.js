@@ -3,7 +3,12 @@ import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { constants } from 'node:os'
 
-const EXIT_COULD_NOT_RUN = 2
+// As a Claude Code Stop hook, exit 2 would block every stop on an error Claude can't fix, so
+// there a traitor that can't run exits 1, a non-blocking error.
+const runsAsHook = process.argv.some(
+  (argument) => argument === 'claude-code-hook' || argument === '--format=claude-code-hook',
+)
+const EXIT_COULD_NOT_RUN = runsAsHook ? 1 : 2
 
 const require = createRequire(import.meta.url)
 const platformPackage = `@jliocsar/traitor-${process.platform}-${process.arch}`
