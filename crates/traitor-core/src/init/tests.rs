@@ -56,11 +56,12 @@ fn writes_at_the_repository_root_from_a_subdirectory() {
 fn upgrades_an_older_config_and_keeps_its_settings_in_order() {
     let directory = repository();
 
+    let schema = schema_url(&version("0.2.1"));
+
     write(
         directory.path(),
         &format!(
-            "{{\"$schema\":\"{}\",\"traits\":{{\"zeta\":{{\"threshold\":0.8}},\"alpha\":{{\"exempt\":[{{\"paths\":[\"a/**\"],\"reason\":\"generated\"}}]}}}}}}",
-            schema_url(&version("0.2.1"))
+            "{{\"$schema\":\"{schema}\",\"traits\":{{\"zeta\":{{\"threshold\":0.8}},\"alpha\":{{\"exempt\":[{{\"paths\":[\"a/**\"],\"reason\":\"generated\"}}]}}}}}}"
         ),
     );
 
@@ -94,10 +95,8 @@ fn adds_a_missing_schema_first() {
 #[test]
 fn leaves_a_current_config_untouched() {
     let directory = repository();
-    let contents = format!(
-        "{{ \"$schema\": \"{}\", \"traits\": {{}} }}",
-        schema_url(&version("0.3.0"))
-    );
+    let schema = schema_url(&version("0.3.0"));
+    let contents = format!("{{ \"$schema\": \"{schema}\", \"traits\": {{}} }}");
 
     write(directory.path(), &contents);
 
@@ -111,10 +110,9 @@ fn leaves_a_current_config_untouched() {
 fn refuses_a_config_newer_than_the_binary() {
     let directory = repository();
 
-    write(
-        directory.path(),
-        &format!("{{\"$schema\":\"{}\"}}", schema_url(&version("0.4.0"))),
-    );
+    let schema = schema_url(&version("0.4.0"));
+
+    write(directory.path(), &format!("{{\"$schema\":\"{schema}\"}}"));
 
     assert_matches!(
         init(directory.path(), &version("0.3.0")),
@@ -137,10 +135,8 @@ fn refuses_a_schema_that_isnt_traitors() {
 #[test]
 fn refuses_to_write_an_upgrade_that_wouldnt_load() {
     let directory = repository();
-    let contents = format!(
-        "{{\"$schema\":\"{}\",\"traits\":{{\"x\":{{\"threshold\":2}}}}}}",
-        schema_url(&version("0.2.0"))
-    );
+    let schema = schema_url(&version("0.2.0"));
+    let contents = format!("{{\"$schema\":\"{schema}\",\"traits\":{{\"x\":{{\"threshold\":2}}}}}}");
 
     write(directory.path(), &contents);
 

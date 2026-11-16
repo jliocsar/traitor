@@ -72,7 +72,8 @@ impl JsonStore {
 fn write_atomically<T: Serialize>(directory: &Path, name: &str, value: &T) -> io::Result<()> {
     fs::create_dir_all(directory)?;
 
-    let temporary = directory.join(format!("{name}.json.{}.tmp", process::id()));
+    let process_id = process::id();
+    let temporary = directory.join(format!("{name}.json.{process_id}.tmp"));
 
     fs::write(&temporary, serde_json::to_vec(value)?)?;
 

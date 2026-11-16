@@ -113,7 +113,9 @@ async fn main() -> ExitCode {
         Ok(Outcome::TraitBroken) => ExitCode::from(EXIT_TRAIT_BROKEN),
         Ok(Outcome::BlockStop) => ExitCode::from(EXIT_BLOCK_STOP),
         Err(error) => {
-            eprintln!("traitor couldn't {activity}: {}", error_chain(&error));
+            let reason = error_chain(&error);
+
+            eprintln!("traitor couldn't {activity}: {reason}");
 
             ExitCode::from(could_not_run)
         }

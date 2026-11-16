@@ -155,7 +155,11 @@ fn shorten(text: &str) -> String {
     let text = text.trim();
 
     match text.char_indices().nth(ERROR_BODY_CHARS) {
-        Some((end, _)) => format!("{}…", &text[..end]),
+        Some((end, _)) => {
+            let (kept, _) = text.split_at(end);
+
+            format!("{kept}…")
+        }
         None => text.to_string(),
     }
 }

@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use super::*;
 
-const MODULE: &str = r"import * as Option from 'effect/Option'
+const MODULE: &str = "import * as Option from 'effect/Option'
 
 const LIMIT = 10
 
@@ -62,7 +62,9 @@ fn render(snippets: &[Snippet]) -> String {
 
 fn numbered_lines(numbers: RangeInclusive<usize>, line: impl Fn(usize) -> String) -> String {
     numbers.fold(String::new(), |mut text, number| {
-        writeln!(text, "{}", line(number)).unwrap();
+        let numbered = line(number);
+
+        writeln!(text, "{numbered}").unwrap();
 
         text
     })
@@ -252,7 +254,8 @@ fn an_unknown_language_falls_back_to_a_line_window() {
 
 #[test]
 fn leading_context_gives_way_to_the_budget() {
-    let context = format!("{}\n", "x".repeat(200)).repeat(20);
+    let long_line = "x".repeat(200);
+    let context = format!("{long_line}\n").repeat(20);
     let source = format!("{context}changed\n");
     let snippets = snippets_for_changes("src/x.py", &source, &[lines(21, 21)]);
 
