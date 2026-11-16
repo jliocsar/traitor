@@ -1,10 +1,13 @@
-//! Judging every changed snippet against the traits whose paths match it.
+//! Judging every changed snippet, or every snippet of the files asked for, against the traits whose paths match it.
 
-use snafu::Snafu;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use snafu::{ResultExt, Snafu};
 
 use crate::climb::{Snippet, snippets_for_changes};
 use crate::configured_repository::ConfiguredRepository;
-use crate::git::GitError;
+use crate::git::{Change, ChangedFile, ChangedFiles, GitError};
 use crate::judge::{Judge, JudgeRequest, JudgingError, judge_through_cache};
 use crate::question::SnippetState;
 use crate::store::{CacheWriteError, JsonStore};
@@ -17,6 +20,24 @@ pub enum CheckError {
     Git { source: GitError },
     #[snafu(transparent)]
     Judging { source: JudgingError },
+    #[snafu(display("couldn't find {}: {source}", path.display()))]
+    FindFile { path: PathBuf, source: io::Error },
+    #[snafu(display(
+        "{} isn't in the repository at {}, so no trait can apply to it",
+        path.display(),
+        root.display()
+    ))]
+    OutsideRepository { path: PathBuf, root: PathBuf },
+}
+
+/// What `check` judges.
+#[derive(Debug, Clone, Copy)]
+pub enum Scope<'request> {
+    /// What changed, as `git diff` reads the revision: none for everything unpushed.
+    Changes(Option<&'request str>),
+    /// These files, whole, as they are on disk. A relative path is read from the current
+    /// directory.
+    Files(&'request [PathBuf]),
 }
 
 #[derive(Debug, Clone)]
@@ -93,20 +114,29 @@ impl<'repository> ChangedSnippet<'repository> {
     }
 }
 
-/// Judges every snippet that changed in `revision` against the traits whose paths match it.
+/// Judges every snippet in `scope` against the traits whose paths match it.
 ///
 /// # Errors
 ///
-/// When git fails, or the judge can't give a verdict.
+/// When git fails, a file asked for can't be found or sits outside the repository, or the
+/// judge can't give a verdict.
 pub async fn check<'repository, J: Judge>(
     repository: &'repository ConfiguredRepository,
-    revision: Option<&str>,
+    scope: Scope<'_>,
     judge: &J,
     store: &JsonStore,
 ) -> Result<Report<'repository>, CheckError> {
     let git = repository.git();
-    let comparison = git.resolve_comparison(revision)?;
-    let changed_files = git.changed_files(&comparison)?;
+
+    let (changed_files, comparison) = match scope {
+        Scope::Changes(revision) => {
+            let comparison = git.resolve_comparison(revision)?;
+
+            (git.changed_files(&comparison)?, Some(comparison))
+        }
+        Scope::Files(paths) => (whole_files(git.root(), paths)?, None),
+    };
+
     let mut changed = Vec::new();
 
     for file in changed_files.files {
@@ -116,7 +146,12 @@ pub async fn check<'repository, J: Judge>(
             continue;
         }
 
-        let Some(source) = git.read_file(&comparison, &file.path)? else {
+        let read = match &comparison {
+            Some(comparison) => git.read_file(comparison, &file.path)?,
+            None => git.read_working_file(&file.path)?,
+        };
+
+        let Some(source) = read else {
             continue;
         };
 
@@ -154,6 +189,47 @@ pub async fn check<'repository, J: Judge>(
         non_utf8_paths: changed_files.non_utf8_paths,
         cache_write_error: judgements.cache_write_error,
     })
+}
+
+/// `paths` as files to judge whole, each by its path in the repository at `root`, sorted and
+/// each once.
+fn whole_files(root: &Path, paths: &[PathBuf]) -> Result<ChangedFiles, CheckError> {
+    let root = root.canonicalize().context(FindFileSnafu { path: root })?;
+    let mut files = ChangedFiles::default();
+
+    for path in paths {
+        let found = path.canonicalize().context(FindFileSnafu { path })?;
+
+        let Ok(relative) = found.strip_prefix(&root) else {
+            return OutsideRepositorySnafu { path, root }.fail();
+        };
+
+        match repository_path(relative) {
+            Some(repository_path) => files.files.push(ChangedFile {
+                path: repository_path,
+                changes: vec![Change::WHOLE_FILE],
+            }),
+            None => files
+                .non_utf8_paths
+                .push(relative.to_string_lossy().into_owned()),
+        }
+    }
+
+    files
+        .files
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    files.files.dedup_by(|left, right| left.path == right.path);
+
+    Ok(files)
+}
+
+/// `relative` the way git and trait globs write a path: UTF-8, with `/` between its parts.
+fn repository_path(relative: &Path) -> Option<String> {
+    relative
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()
+        .map(|parts| parts.join("/"))
 }
 
 #[cfg(test)]

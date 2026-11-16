@@ -20,5 +20,9 @@ tokio = { version = "1.54.1", features = ["rt", "macros"] }
 traitor-ai-typesafe.workspace = true
 traitor-core.workspace = true
 
+[dev-dependencies]
+# Only the test that keeps schema/check-report.schema.json current generates the schema.
+schemars = "1.2.3"
+
 [lints]
 workspace = true

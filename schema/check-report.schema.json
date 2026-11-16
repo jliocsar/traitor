@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JsonReport",
+  "description": "Everything `check` found, for a tool to read.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The contract's version, 1 for this shape.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "root": {
+      "description": "The repository's root, absolute. Each finding's path is relative to it.",
+      "type": "string"
+    },
+    "snippetCount": {
+      "description": "How many snippets were judged.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "failsCheck": {
+      "description": "Whether a finding failed its trait's threshold, which is when `check` exits 1.",
+      "type": "boolean"
+    },
+    "findings": {
+      "description": "One per snippet and trait that applies to it, passes included.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/JsonFinding"
+      }
+    },
+    "nonUtf8Paths": {
+      "description": "Paths that aren't valid UTF-8, shown as near as they can be. They weren't judged.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "root",
+    "snippetCount",
+    "failsCheck",
+    "findings",
+    "nonUtf8Paths"
+  ],
+  "$defs": {
+    "JsonFinding": {
+      "description": "One trait's verdict on one snippet.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The file, relative to the root, with `/` between its parts.",
+          "type": "string"
+        },
+        "firstLine": {
+          "description": "The snippet's first line, counting from 1.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "lastLine": {
+          "description": "The snippet's last line, included.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "trait": {
+          "description": "The trait's slug: its folder's name under `.agents/traits/`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "The trait's title, from its `TRAIT.md`.",
+          "type": "string"
+        },
+        "why": {
+          "description": "Why the trait matters, from its `TRAIT.md`.",
+          "type": "string"
+        },
+        "verdict": {
+          "description": "The answer Jev gave.",
+          "$ref": "#/$defs/JsonVerdict"
+        },
+        "pFail": {
+          "description": "How likely the snippet fails the trait, from 0 to 1.",
+          "type": "number",
+          "format": "double"
+        },
+        "threshold": {
+          "description": "The trait's threshold in `.agents/traitor.json`, or null when its fails are only reported.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "failsCheck": {
+          "description": "Whether `pFail` reached the threshold.",
+          "type": "boolean"
+        },
+        "fromCache": {
+          "description": "Whether the verdict came from traitor's cache instead of a new request.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "firstLine",
+        "lastLine",
+        "trait",
+        "title",
+        "why",
+        "verdict",
+        "pFail",
+        "failsCheck",
+        "fromCache"
+      ]
+    },
+    "JsonVerdict": {
+      "description": "Jev's answer, named as Jev names it.",
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "n/a",
+        "unsure"
+      ]
+    }
+  }
+}

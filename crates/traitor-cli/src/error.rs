@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::io;
+use std::path::PathBuf;
 
 use snafu::{CleanedErrorText, Snafu};
 use traitor_ai_typesafe::TypeSafeError;
@@ -33,6 +34,13 @@ pub(crate) enum CliError {
     FailIdentity { source: serde_json::Error },
     #[snafu(display("couldn't write the Stop hook's answer: {source}"))]
     HookOutput { source: serde_json::Error },
+    #[snafu(display("couldn't write the JSON report: {source}"))]
+    JsonReport { source: serde_json::Error },
+    #[snafu(display(
+        "the repository's root, {}, isn't valid UTF-8, so the JSON report can't name it",
+        root.display()
+    ))]
+    NonUtf8Root { root: PathBuf },
 }
 
 /// Says on stderr that verdicts couldn't be cached. The command's result doesn't change.

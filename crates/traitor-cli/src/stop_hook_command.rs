@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use traitor_core::blocked_fails::{BlockedFails, SessionFails, SessionId, session_fails};
-use traitor_core::check::{Finding, Report, check};
+use traitor_core::check::{Finding, Report, Scope, check};
 use traitor_core::store::CacheWriteError;
 use traitor_core::verdict::Answer;
 
@@ -176,9 +176,9 @@ impl fmt::Display for UnrememberedFails<'_> {
     }
 }
 
-pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
+pub(crate) async fn run(scope: Scope<'_>) -> CommandResult {
     let answer = match read_input(io::stdin()) {
-        Ok(input) => respond(&input, revision)
+        Ok(input) => respond(&input, scope)
             .await
             .unwrap_or_else(|error| StopHookAnswer::Allow(StopHookOutput::could_not_check(&error))),
         Err(error) => StopHookAnswer::Allow(StopHookOutput::could_not_check(&error)),
@@ -208,21 +208,12 @@ fn read_input(mut reader: impl Read) -> Result<StopHookInput, InputError> {
     serde_json::from_str(&text).context(ParseSnafu)
 }
 
-async fn respond(
-    input: &StopHookInput,
-    revision: Option<&str>,
-) -> Result<StopHookAnswer, CliError> {
+async fn respond(input: &StopHookInput, scope: Scope<'_>) -> Result<StopHookAnswer, CliError> {
     let Some(session) = Session::if_it_has_traits(&input.cwd)? else {
         return Ok(StopHookAnswer::Allow(StopHookOutput::default()));
     };
 
-    let report = check(
-        &session.repository,
-        revision,
-        &session.judge,
-        &session.store,
-    )
-    .await?;
+    let report = check(&session.repository, scope, &session.judge, &session.store).await?;
     let blocked_fails = BlockedFails::new(&session.store);
     let fails = session_fails(&report, &blocked_fails.read(&input.session_id))
         .context(FailIdentitySnafu)?;

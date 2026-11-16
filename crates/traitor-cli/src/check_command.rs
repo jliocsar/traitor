@@ -1,26 +1,38 @@
-//! `traitor check`: judges changed snippets and prints what fails, as text or GitHub annotations.
+//! `traitor check`: judges changed snippets, or whole files, and prints what fails, as text with
+//! GitHub annotations or as JSON for tools.
+
+mod json_report;
 
 use std::env;
 
-use traitor_core::check::{Finding, Report, check};
+use snafu::{OptionExt, ResultExt};
+use traitor_core::check::{Finding, Report, Scope, check};
 use traitor_core::config::CONFIG_PATH;
 use traitor_core::verdict::Answer;
 
-use crate::error::warn_if_not_cached;
+use crate::check_command::json_report::JsonReport;
+use crate::error::{CliError, JsonReportSnafu, NonUtf8RootSnafu, warn_if_not_cached};
 use crate::session::Session;
 use crate::{CommandResult, Outcome};
 
-pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
-    let session = Session::in_current_directory()?;
-    let report = check(
-        &session.repository,
-        revision,
-        &session.judge,
-        &session.store,
-    )
-    .await?;
+/// How `check` prints its report.
+#[derive(Clone, Copy)]
+pub(crate) enum Output {
+    /// For people, with GitHub annotations on GitHub Actions.
+    Text,
+    /// For tools: the contract in `docs/check-json.md`, on one line.
+    Json,
+}
 
-    print_report(&report);
+pub(crate) async fn run(scope: Scope<'_>, output: Output) -> CommandResult {
+    let session = Session::in_current_directory()?;
+    let report = check(&session.repository, scope, &session.judge, &session.store).await?;
+
+    match output {
+        Output::Text => print_report(&report),
+        Output::Json => print_json(&report, &session)?,
+    }
+
     warn_if_not_cached(report.cache_write_error.as_ref());
 
     Ok(if report.fails_check() {
@@ -77,6 +89,17 @@ fn print_report(report: &Report) {
             "No failing trait has a threshold in {CONFIG_PATH}, so its fails are reported and don't fail the check."
         );
     }
+}
+
+fn print_json(report: &Report, session: &Session) -> Result<(), CliError> {
+    let root = session.repository.root();
+    let shown_root = root.to_str().context(NonUtf8RootSnafu { root })?;
+    let json =
+        serde_json::to_string(&JsonReport::new(report, shown_root)).context(JsonReportSnafu)?;
+
+    println!("{json}");
+
+    Ok(())
 }
 
 fn print_finding(finding: &Finding) {

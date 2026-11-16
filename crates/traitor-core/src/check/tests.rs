@@ -40,7 +40,13 @@ fn judges_each_changed_unit_and_fails_over_the_threshold() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
-    let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    let report = block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ))
+    .unwrap();
 
     assert_eq!(report.snippet_count, 2);
     assert_eq!(judge.calls.get(), 2);
@@ -66,9 +72,21 @@ fn a_second_run_reads_every_verdict_from_the_cache() {
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
 
-    block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ))
+    .unwrap();
 
-    let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    let report = block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ))
+    .unwrap();
 
     assert_eq!(judge.calls.get(), 2);
     assert!(report.findings.iter().all(|finding| finding.from_cache));
@@ -81,7 +99,7 @@ fn without_a_threshold_a_fail_is_only_reported() {
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
         &repository,
-        None,
+        Scope::Changes(None),
         &FakeJudge::new(),
         &cache_in(&cache),
     ))
@@ -104,7 +122,7 @@ fn a_fail_under_its_threshold_neither_fails_the_check_nor_counts_as_only_reporte
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
         &repository,
-        None,
+        Scope::Changes(None),
         &FakeJudge::new(),
         &cache_in(&cache),
     ))
@@ -122,7 +140,13 @@ fn an_exempt_path_is_never_asked_about() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::new();
-    let report = block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    let report = block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ))
+    .unwrap();
 
     assert_eq!(judge.calls.get(), 0);
     assert!(report.findings.is_empty());
@@ -158,7 +182,12 @@ fn an_offline_judge_cannot_check() {
     let repository = open(directory.path());
     let cache = TempDir::new().unwrap();
     let judge = FakeJudge::offline();
-    let result = block_on(check(&repository, None, &judge, &cache_in(&cache)));
+    let result = block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ));
 
     assert_matches!(
         result,
@@ -176,13 +205,24 @@ fn verdicts_that_came_back_are_kept_when_another_request_fails() {
     let flaky = FakeJudge::offline_after(1);
 
     assert_matches!(
-        block_on(check(&repository, None, &flaky, &cache_in(&cache))),
+        block_on(check(
+            &repository,
+            Scope::Changes(None),
+            &flaky,
+            &cache_in(&cache)
+        )),
         Err(_)
     );
 
     let judge = FakeJudge::new();
 
-    block_on(check(&repository, None, &judge, &cache_in(&cache))).unwrap();
+    block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &judge,
+        &cache_in(&cache),
+    ))
+    .unwrap();
 
     assert_eq!(judge.calls.get(), 1);
 }
@@ -201,7 +241,7 @@ fn a_new_binary_file_is_never_asked_about() {
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
         &repository,
-        None,
+        Scope::Changes(None),
         &FakeJudge::new(),
         &cache_in(&cache),
     ))
@@ -231,7 +271,7 @@ fn a_range_reads_files_from_its_last_commit() {
     let cache = TempDir::new().unwrap();
     let report = block_on(check(
         &repository,
-        Some("HEAD~..HEAD"),
+        Scope::Changes(Some("HEAD~..HEAD")),
         &FakeJudge::new(),
         &cache_in(&cache),
     ))
@@ -257,7 +297,7 @@ fn a_cache_that_cant_be_written_is_reported_without_changing_the_verdicts() {
 
     let report = block_on(check(
         &repository,
-        None,
+        Scope::Changes(None),
         &FakeJudge::new(),
         &JsonStore::at(not_a_directory),
     ))
@@ -266,4 +306,103 @@ fn a_cache_that_cant_be_written_is_reported_without_changing_the_verdicts() {
     assert_matches!(report.cache_write_error, Some(_));
     assert_eq!(report.snippet_count, 2);
     assert!(report.fails_check());
+}
+
+/// A repository whose module is committed, so nothing has changed.
+fn committed_repository() -> TempDir {
+    let directory = repository(r#"{ "traits": { "railway-not-guards": { "threshold": 0.5 } } }"#);
+
+    git(directory.path(), &["add", "-A"]);
+    git(directory.path(), &["commit", "-q", "-m", "module"]);
+
+    directory
+}
+
+#[test]
+fn files_are_judged_whole_even_when_nothing_changed() {
+    let directory = committed_repository();
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let files = [directory.path().join("src/module.ts")];
+    let unchanged = block_on(check(
+        &repository,
+        Scope::Changes(None),
+        &FakeJudge::new(),
+        &cache_in(&cache),
+    ))
+    .unwrap();
+    let report = block_on(check(
+        &repository,
+        Scope::Files(&files),
+        &FakeJudge::new(),
+        &cache_in(&cache),
+    ))
+    .unwrap();
+
+    assert_eq!(unchanged.snippet_count, 0);
+    assert_eq!(report.snippet_count, 2);
+    assert!(
+        report
+            .findings
+            .iter()
+            .all(|finding| finding.path == "src/module.ts")
+    );
+    assert!(report.fails_check());
+}
+
+#[test]
+fn a_file_asked_for_twice_is_judged_once_and_unmatched_files_are_skipped() {
+    let directory = committed_repository();
+
+    fs::write(directory.path().join("notes.md"), "# Notes\n").unwrap();
+
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let files = [
+        directory.path().join("src/module.ts"),
+        directory.path().join("src/../src/module.ts"),
+        directory.path().join("notes.md"),
+    ];
+    let report = block_on(check(
+        &repository,
+        Scope::Files(&files),
+        &FakeJudge::new(),
+        &cache_in(&cache),
+    ))
+    .unwrap();
+
+    assert_eq!(report.snippet_count, 2);
+}
+
+#[test]
+fn a_missing_file_or_one_outside_the_repository_is_an_error() {
+    let directory = committed_repository();
+    let elsewhere = TempDir::new().unwrap();
+    let outside = elsewhere.path().join("module.ts");
+
+    fs::write(&outside, MODULE).unwrap();
+
+    let repository = open(directory.path());
+    let cache = TempDir::new().unwrap();
+    let missing = [directory.path().join("src/gone.ts")];
+    let outside = [outside];
+
+    assert_matches!(
+        block_on(check(
+            &repository,
+            Scope::Files(&missing),
+            &FakeJudge::new(),
+            &cache_in(&cache),
+        )),
+        Err(CheckError::FindFile { .. })
+    );
+    assert_matches!(
+        block_on(check(
+            &repository,
+            Scope::Files(&outside),
+            &FakeJudge::new(),
+            &cache_in(&cache),
+        )),
+        Err(CheckError::OutsideRepository { .. })
+    );
 }

@@ -7,7 +7,7 @@ use futures::executor::block_on;
 use tempfile::TempDir;
 
 use super::*;
-use crate::check::check;
+use crate::check::{Scope, check};
 use crate::climb::Snippet;
 use crate::configured_repository::ConfiguredRepository;
 use crate::test_support::{FakeJudge, railway_definition, repository_with_trait, verdict};
@@ -145,7 +145,13 @@ fn a_checked_session_has_new_fails_once() {
     let blocked_fails = BlockedFails::new(&store);
 
     let stop = || {
-        let report = block_on(check(&repository, None, &FakeJudge::new(), &store)).unwrap();
+        let report = block_on(check(
+            &repository,
+            Scope::Changes(None),
+            &FakeJudge::new(),
+            &store,
+        ))
+        .unwrap();
         let fails = fails_of(&report, &blocked_fails.read(&session("session")));
 
         blocked_fails
