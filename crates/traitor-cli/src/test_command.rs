@@ -50,11 +50,10 @@ fn print_case_report(report: &CaseReport) {
     }
 
     for (slug, results) in &by_trait {
-        println!(
-            "{slug}: p(fail) on fail cases {}, on pass cases {}",
-            fail_probability_range(results, Answer::Fail),
-            fail_probability_range(results, Answer::Pass)
-        );
+        let on_fail_cases = fail_probability_range(results, Answer::Fail);
+        let on_pass_cases = fail_probability_range(results, Answer::Pass);
+
+        println!("{slug}: p(fail) on fail cases {on_fail_cases}, on pass cases {on_pass_cases}");
     }
 
     let held = report
@@ -68,16 +67,18 @@ fn print_case_report(report: &CaseReport) {
         .filter(|result| result.from_cache)
         .count();
 
+    let cases = report.results.len();
+
     println!();
     println!(
-        "{held} of {} cases got the verdict their folder names, {cached} from the cache.",
-        report.results.len()
+        "{held} of {cases} cases got the verdict their folder names, {cached} from the cache."
     );
 
     if !report.traits_without_cases.is_empty() {
+        let slugs = report.traits_without_cases.join(", ");
+
         println!(
-            "No cases yet for {}. Add them as files in {TRAITS_DIRECTORY}/<trait>/{PASS_CASES_DIRECTORY} and {FAIL_CASES_DIRECTORY}.",
-            report.traits_without_cases.join(", ")
+            "No cases yet for {slugs}. Add them as files in {TRAITS_DIRECTORY}/<trait>/{PASS_CASES_DIRECTORY} and {FAIL_CASES_DIRECTORY}."
         );
     }
 }

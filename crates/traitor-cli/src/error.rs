@@ -38,7 +38,9 @@ pub(crate) enum CliError {
 /// Says on stderr that verdicts couldn't be cached. The command's result doesn't change.
 pub(crate) fn warn_if_not_cached(error: Option<&CacheWriteError>) {
     if let Some(error) = error {
-        eprintln!("traitor couldn't cache verdicts: {}", error_chain(error));
+        let reason = error_chain(error);
+
+        eprintln!("traitor couldn't cache verdicts: {reason}");
     }
 }
 

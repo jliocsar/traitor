@@ -58,18 +58,18 @@ fn print_report(report: &Report) {
         .filter(|finding| finding.from_cache)
         .count();
 
+    let fails = count(Answer::Fail);
+    let unsure = count(Answer::Unsure);
+
     println!(
-        "traitor judged {} snippets: {} fail, {} unsure, {cached} verdicts from the cache.",
+        "traitor judged {} snippets: {fails} fail, {unsure} unsure, {cached} verdicts from the cache.",
         report.snippet_count,
-        count(Answer::Fail),
-        count(Answer::Unsure),
     );
 
     if !report.non_utf8_paths.is_empty() {
-        println!(
-            "Skipped these changed paths, which aren't valid UTF-8: {}.",
-            report.non_utf8_paths.join(", ")
-        );
+        let paths = report.non_utf8_paths.join(", ");
+
+        println!("Skipped these changed paths, which aren't valid UTF-8: {paths}.");
     }
 
     if report.fails_are_only_reported() {
@@ -80,12 +80,12 @@ fn print_report(report: &Report) {
 }
 
 fn print_finding(finding: &Finding) {
+    let label = finding.definition.label();
+    let location = finding.location();
+
     println!(
-        "{}: {} at {}, p(fail) {:.2}",
-        finding.verdict.answer,
-        finding.definition.label(),
-        finding.location(),
-        finding.verdict.probabilities.fail
+        "{}: {label} at {location}, p(fail) {:.2}",
+        finding.verdict.answer, finding.verdict.probabilities.fail
     );
     println!("  why: {}", finding.definition.why);
 
@@ -105,13 +105,13 @@ fn print_annotation(finding: &Finding) {
         "warning"
     };
 
+    let file = escape_annotation_property(&finding.path);
+    let title = escape_annotation_property(&finding.definition.title);
+    let message = escape_annotation_message(&finding.definition.why);
+
     println!(
-        "::{level} file={},line={},endLine={},title={}::{}",
-        escape_annotation_property(&finding.path),
-        finding.snippet.first_line,
-        finding.snippet.last_line,
-        escape_annotation_property(&finding.definition.title),
-        escape_annotation_message(&finding.definition.why)
+        "::{level} file={file},line={},endLine={},title={title}::{message}",
+        finding.snippet.first_line, finding.snippet.last_line
     );
 }
 

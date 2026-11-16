@@ -43,7 +43,9 @@ struct StopHookOutput {
 
 impl StopHookOutput {
     fn could_not_check(error: &dyn Error) -> Self {
-        Self::note(format!("traitor couldn't check: {}", error_chain(error)))
+        let reason = error_chain(error);
+
+        Self::note(format!("traitor couldn't check: {reason}"))
     }
 
     fn note(message: String) -> Self {
@@ -85,20 +87,20 @@ impl fmt::Display for BlockReason<'_> {
 
         for findings in by_trait.into_values() {
             let definition = findings[0].definition;
+            let label = definition.label();
 
             write!(
                 formatter,
-                "\n{}\nwhy: {}\nexpect: {}\n",
-                definition.label(),
-                definition.why,
-                definition.expect
+                "\n{label}\nwhy: {}\nexpect: {}\n",
+                definition.why, definition.expect
             )?;
 
             for finding in findings {
+                let location = finding.location();
+
                 writeln!(
                     formatter,
-                    "- {}, p(fail) {:.2}",
-                    finding.location(),
+                    "- {location}, p(fail) {:.2}",
                     finding.verdict.probabilities.fail
                 )?;
             }
@@ -115,12 +117,10 @@ impl fmt::Display for BlockReason<'_> {
             formatter.write_str("\nJev couldn't tell for these from the snippet alone. Read them against the trait yourself:\n")?;
 
             for finding in unsure {
-                writeln!(
-                    formatter,
-                    "- {} at {}",
-                    finding.definition.label(),
-                    finding.location()
-                )?;
+                let label = finding.definition.label();
+                let location = finding.location();
+
+                writeln!(formatter, "- {label} at {location}")?;
             }
         }
 
@@ -139,12 +139,10 @@ impl fmt::Display for StillFailing<'_> {
             .write_str("traitor: these still fail, and the agent was already told about them:")?;
 
         for finding in self.failing {
-            write!(
-                formatter,
-                "\n- {} at {}",
-                finding.definition.label(),
-                finding.location()
-            )?;
+            let label = finding.definition.label();
+            let location = finding.location();
+
+            write!(formatter, "\n- {label} at {location}")?;
         }
 
         Ok(())
@@ -160,19 +158,18 @@ struct UnrememberedFails<'a> {
 
 impl fmt::Display for UnrememberedFails<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = error_chain(self.error);
+
         write!(
             formatter,
-            "traitor didn't block the agent: it couldn't save which fails it told this session about ({}), so it would block every stop on the same fails. These fail:",
-            error_chain(self.error)
+            "traitor didn't block the agent: it couldn't save which fails it told this session about ({reason}), so it would block every stop on the same fails. These fail:"
         )?;
 
         for finding in self.failing {
-            write!(
-                formatter,
-                "\n- {} at {}",
-                finding.definition.label(),
-                finding.location()
-            )?;
+            let label = finding.definition.label();
+            let location = finding.location();
+
+            write!(formatter, "\n- {label} at {location}")?;
         }
 
         Ok(())
@@ -189,10 +186,9 @@ pub(crate) async fn run(revision: Option<&str>) -> CommandResult {
 
     match answer {
         StopHookAnswer::Allow(output) => {
-            println!(
-                "{}",
-                serde_json::to_string(&output).context(HookOutputSnafu)?
-            );
+            let json = serde_json::to_string(&output).context(HookOutputSnafu)?;
+
+            println!("{json}");
 
             Ok(Outcome::Success)
         }

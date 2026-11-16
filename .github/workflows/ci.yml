@@ -26,7 +26,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: ast-grep@0.45.3
-      - run: cargo install --locked --git https://github.com/jliocsar/begone-slop-rs --rev 3561cd530cf93f188f1038f1a1a8626d26e0683a cargo-bs
+      - run: cargo install --locked --git https://github.com/jliocsar/begone-slop-rs --rev d5b48e7f569cda0f6b7f5f67e6bf0958aba03aaa cargo-bs
       - run: cargo bs
 
   build:
