@@ -111,6 +111,8 @@ traitor only sends the changed bits: the function, block or doc section around e
 
 An **unsure** isn't a failure. It means Jev couldn't tell from the snippet alone, so take a look yourself.
 
+For tools, `traitor check --format json` prints the report as JSON, a stable contract described in [`docs/check-json.md`](docs/check-json.md). `--files a.ts b.ts` judges whole files instead of what changed, which is what a linter plugin needs.
+
 ### 5. Make it block
 
 Out of the box, traitor only reports. To make a trait fail the check, give it a threshold in `.agents/traitor.json`:

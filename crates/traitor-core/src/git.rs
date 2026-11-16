@@ -163,12 +163,20 @@ impl Repository {
         comparison: &Comparison,
         path: &str,
     ) -> Result<Option<String>, GitError> {
-        let text = match &comparison.head {
-            Some(head) => self.git(&["show", "--end-of-options", &format!("{head}:{path}")])?,
-            None => std::fs::read(self.root.join(path))
-                .map(text_from_bytes)
-                .context(ReadWorkingTreeSnafu { path })?,
+        let Some(head) = &comparison.head else {
+            return self.read_working_file(path);
         };
+
+        let text = self.git(&["show", "--end-of-options", &format!("{head}:{path}")])?;
+
+        Ok((!looks_binary(&text)).then_some(text))
+    }
+
+    /// The file at `path` in the working tree, or none when it looks binary.
+    pub(crate) fn read_working_file(&self, path: &str) -> Result<Option<String>, GitError> {
+        let text = std::fs::read(self.root.join(path))
+            .map(text_from_bytes)
+            .context(ReadWorkingTreeSnafu { path })?;
 
         Ok((!looks_binary(&text)).then_some(text))
     }

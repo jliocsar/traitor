@@ -74,6 +74,12 @@ impl ConfiguredRepository {
         Ok(repository)
     }
 
+    /// The repository's root, as git names it.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        self.git.root()
+    }
+
     pub(crate) fn git(&self) -> &Repository {
         &self.git
     }

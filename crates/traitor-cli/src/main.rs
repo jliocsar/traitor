@@ -8,10 +8,13 @@ mod stop_hook_command;
 mod test_command;
 
 use std::env;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use traitor_core::check::Scope;
 
+use crate::check_command::Output;
 use crate::error::{CliError, error_chain};
 
 const EXIT_TRAIT_BROKEN: u8 = 1;
@@ -33,6 +36,7 @@ struct Arguments {
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Text,
+    Json,
     ClaudeCodeHook,
 }
 
@@ -42,11 +46,15 @@ enum Command {
         about = "Set traitor up in this repo, or upgrade its config to this traitor's version. Setting up is how a repo agrees to send its code to TypeSafe."
     )]
     Init,
-    /// Judge every changed snippet against the traits whose paths match it.
+    /// Judge every changed snippet, or every snippet of the files given, against the traits whose paths match it.
     Check {
         /// What to judge, as `git diff` reads it: nothing for everything unpushed, a ref for everything since it, or A..B for what changed between two commits.
+        #[arg(conflicts_with = "files")]
         revision: Option<String>,
-        /// How to report: text for people and CI, or claude-code-hook for the JSON a Claude Code Stop hook reads on stdin and prints.
+        /// Judge these files whole, as they are on disk, instead of what changed.
+        #[arg(long, num_args = 1.., value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// How to report: text for people and CI, json for tools (see docs/check-json.md), or claude-code-hook for a Claude Code Stop hook.
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -99,12 +107,23 @@ async fn main() -> ExitCode {
         Command::Init => ("set up", init_command::run()),
         Command::Check {
             revision,
-            format: Format::Text,
-        } => ("check", check_command::run(revision.as_deref()).await),
-        Command::Check {
-            revision,
-            format: Format::ClaudeCodeHook,
-        } => ("check", stop_hook_command::run(revision.as_deref()).await),
+            files,
+            format,
+        } => {
+            let scope = if files.is_empty() {
+                Scope::Changes(revision.as_deref())
+            } else {
+                Scope::Files(&files)
+            };
+
+            let result = match format {
+                Format::Text => check_command::run(scope, Output::Text).await,
+                Format::Json => check_command::run(scope, Output::Json).await,
+                Format::ClaudeCodeHook => stop_hook_command::run(scope).await,
+            };
+
+            ("check", result)
+        }
         Command::Test { traits } => ("test", test_command::run(&traits).await),
     };
 
