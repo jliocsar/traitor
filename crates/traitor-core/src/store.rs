@@ -12,12 +12,14 @@ use snafu::{ResultExt, Snafu};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
-/// A cache file that couldn't be written. Nothing is lost but time: a later run asks again.
+/// A cache file that couldn't be written. Verdicts are only asked again, but a Stop hook can't
+/// remember which fails it already told a session about.
 #[derive(Debug, Snafu)]
-#[snafu(display("couldn't write {}: {source}", path.display()))]
-pub struct CacheWriteError {
-    path: PathBuf,
-    source: io::Error,
+pub enum CacheWriteError {
+    #[snafu(display("couldn't write {}: {source}", path.display()))]
+    Write { path: PathBuf, source: io::Error },
+    #[snafu(display("this user has no cache directory"))]
+    NoDirectory,
 }
 
 #[derive(Clone)]
@@ -55,13 +57,13 @@ impl JsonStore {
         serde_json::from_slice(&contents).ok()
     }
 
-    /// Writes `value` as `name`. A store without a directory writes nothing.
+    /// Writes `value` as `name`. A store without a directory can't, and says so.
     pub(crate) fn write<T: Serialize>(&self, name: &str, value: &T) -> Result<(), CacheWriteError> {
         let Some(directory) = &self.directory else {
-            return Ok(());
+            return NoDirectorySnafu.fail();
         };
 
-        write_atomically(directory, name, value).context(CacheWriteSnafu {
+        write_atomically(directory, name, value).context(WriteSnafu {
             path: directory.join(format!("{name}.json")),
         })
     }

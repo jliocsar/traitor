@@ -31,9 +31,9 @@ fn a_write_that_fails_says_where() {
 }
 
 #[test]
-fn a_store_without_a_directory_writes_nothing_and_reads_nothing() {
+fn a_store_without_a_directory_says_it_cant_write() {
     let store = JsonStore { directory: None };
 
-    assert_matches!(store.write("name", &1), Ok(()));
+    assert_matches!(store.write("name", &1), Err(CacheWriteError::NoDirectory));
     assert_eq!(store.read::<u8>("name"), None);
 }
